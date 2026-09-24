@@ -1,4 +1,4 @@
-# Drag Plates
+# Geode-Pangea
 
 Six continents on a globe. Drag one and it moves as a rigid plate on the sphere, by a
 finite rotation about an Euler pole. The rotations can be exported as a GPlates `.rot`

@@ -1,5 +1,5 @@
 /*
- * Drag Plates: six continents on an orthographic globe, each a rigid plate you can drag.
+ * Pangea: six continents on an orthographic globe, each a rigid plate you can drag.
  *
  * Every plate carries ONE quaternion -- its total rotation from present-day position --
  * and petrify's PolygonLayer rotates its geometry by it. A drag never edits vertices; it
@@ -287,7 +287,7 @@ function rotationFile(age) {
   for (const p of [...plates].sort((a, b) => a.id - b.id)) {
     const r = quatToPoleAngle(p.q);
     out.push(line(p.id, 0, 90, 0, 0, p.name));
-    out.push(line(p.id, age, r.lat, r.lon, r.angle, `${p.name} (Drag Plates)`));
+    out.push(line(p.id, age, r.lat, r.lon, r.angle, `${p.name} (Pangea)`));
   }
   return out.join('\n') + '\n';
 }
@@ -410,7 +410,7 @@ document.getElementById('ghosts').addEventListener('change', (e) => {
 
 document.getElementById('export').addEventListener('click', () => {
   const age = Math.max(0, Number(document.getElementById('age').value) || 0);
-  download(rotationFile(age), `drag-plates-${age}Ma.rot`);
+  download(rotationFile(age), `pangea-${age}Ma.rot`);
 });
 
 // ---- Start --------------------------------------------------------------------------
