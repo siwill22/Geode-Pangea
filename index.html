@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drag Plates</title>
+<meta name="description" content="Six continents on a globe. Drag one and it moves as a rigid plate, by a finite rotation about an Euler pole; export the result as a GPlates rotation file.">
+<link rel="stylesheet" href="css/drag.css">
+</head>
+<body>
+
+<canvas id="globe" aria-label="Globe. Drag a continent to move it; drag the ocean to turn the globe."></canvas>
+
+<aside class="panel" id="panel">
+  <h1>Drag Plates</h1>
+  <p class="hint">
+    Drag a continent to move it over the sphere. <kbd>Shift</kbd>-drag, or switch on
+    <em>Twist</em>, to spin it about its own centre. Drag the ocean to turn the globe.
+  </p>
+
+  <table class="plates" id="plates">
+    <thead>
+      <tr><th></th><th>Plate</th><th title="Euler pole latitude">Lat</th>
+          <th title="Euler pole longitude">Lon</th><th title="Rotation angle">Angle</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <p class="note">
+    Each row is the plate's total rotation from its present-day position &mdash; one
+    Euler pole and angle, however many drags it took to get there.
+  </p>
+
+  <div class="row">
+    <label class="toggle"><input type="checkbox" id="twist"> Twist</label>
+    <label class="toggle"><input type="checkbox" id="ghosts" checked> Present-day outlines</label>
+  </div>
+  <div class="row">
+    <button type="button" id="undo" disabled>Undo</button>
+    <button type="button" id="reset">Reset</button>
+  </div>
+  <div class="row">
+    <label class="age">Age <input type="number" id="age" value="100" min="0" step="1"> Ma</label>
+    <button type="button" id="export">Export .rot</button>
+  </div>
+  <p class="source">Coastlines: Natural Earth 1:110m land, split at Suez and Panama.</p>
+</aside>
+
+<script type="module" src="js/drag.js"></script>
+</body>
+</html>

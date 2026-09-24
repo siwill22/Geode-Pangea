@@ -1,0 +1,115 @@
+:root {
+  color-scheme: dark;
+  --bg: #070c16;
+  --ocean: #0d1b2e;
+  --ink: #e8f0f8;
+  --muted: rgba(232, 240, 248, 0.62);
+  --accent: #8fd4f0;
+  --panel: rgba(9, 16, 28, 0.86);
+  --line: rgba(143, 212, 240, 0.22);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+canvas.over-plate { cursor: move; }
+canvas.dragging { cursor: grabbing; }
+
+.panel {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  z-index: 2;
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding: 0.9rem 1.1rem;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+}
+
+h1 { margin: 0 0 0.3rem; font-size: 1.05rem; font-weight: 600; }
+.hint, .note, .source { margin: 0 0 0.7rem; font-size: 0.8rem; color: var(--muted); }
+.source { margin: 0.6rem 0 0; font-size: 0.72rem; }
+kbd {
+  font: inherit;
+  padding: 0 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+.plates {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.4rem;
+}
+.plates th {
+  text-align: right;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 0 0.3rem 0.25rem;
+}
+.plates th:nth-child(2) { text-align: left; }
+.plates td { padding: 0.15rem 0.3rem; text-align: right; }
+.plates td:nth-child(2) { text-align: left; white-space: nowrap; }
+.plates tr.active td { color: var(--accent); }
+.plates tr.moved td:nth-child(n+3) { color: var(--ink); }
+.plates td:nth-child(n+3) { color: var(--muted); }
+.swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
+  vertical-align: -0.1rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+  margin-top: 0.55rem;
+}
+.toggle, .age { display: flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; }
+.age input {
+  width: 4.5rem;
+  font: inherit;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.15rem 0.35rem;
+}
+button {
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--ink);
+  background: rgba(143, 212, 240, 0.12);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: rgba(143, 212, 240, 0.22); }
+button:disabled { opacity: 0.4; cursor: default; }
+input[type=checkbox] { accent-color: var(--accent); }
