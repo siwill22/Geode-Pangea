@@ -24,6 +24,17 @@
     <em>Twist</em>, to spin it about its own centre. Drag the ocean to turn the globe.
   </p>
 
+  <div id="carry-row" class="carry" hidden>
+    <p class="note" id="carry-note" aria-live="polite"></p>
+    <div class="row">
+      <label class="file-button">Load fit (.rot)<input type="file" id="load-fit" accept=".rot,.txt"></label>
+      <label class="file-button">Load Africa motion (.rot)<input type="file" id="load-motion" accept=".rot,.txt"></label>
+    </div>
+  </div>
+  <div class="row" id="link-row" hidden>
+    <label class="toggle"><input type="checkbox" id="linking"> Link plates</label>
+    <span class="note" id="link-note" aria-live="polite"></span>
+  </div>
   <table class="plates" id="plates">
     <thead>
       <tr><th></th><th>Plate</th><th id="th-parent" hidden>Moves with</th><th title="Euler pole latitude">Lat</th>
@@ -45,10 +56,6 @@
     seafloor along each chain, coloured by its interpolated age</span>
   </div>
 
-  <div class="row" id="link-row" hidden>
-    <label class="toggle"><input type="checkbox" id="linking"> Link plates</label>
-    <span class="note" id="link-note" aria-live="polite"></span>
-  </div>
   <div class="row">
     <label class="toggle"><input type="checkbox" id="twist"> Twist</label>
     <label class="toggle"><input type="checkbox" id="ghosts" checked> Present-day outlines</label>

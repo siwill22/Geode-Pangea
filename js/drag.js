@@ -751,6 +751,7 @@ function updateTable() {
   document.body.classList.toggle('tree', tree);   // a wider panel, for the extra column
   document.querySelector('#plates tbody').innerHTML = rows.join('');
   document.getElementById('undo').disabled = undoStack.length === 0;
+  if (!drag) saveChapter();
   if (tree) {
     document.getElementById('table-note').textContent =
       `Each row is a plate's rotation relative to the plate it moves with, from ${reconAge} Ma to `
@@ -770,6 +771,133 @@ document.querySelector('#plates tbody').addEventListener('change', (e) => {
   updateTable();
   requestDraw();
 });
+
+// ---- Carrying work between chapters -----------------------------------------------------
+
+/*
+ * Every chapter keeps its plates' total rotations (relative to the mantle) in this
+ * browser whenever an edit ends, so a later chapter can build on them. Storage may be
+ * missing or blocked (a private window, cleared site data): then nothing is saved and
+ * the later chapter starts from present day, with a .rot file as the way in instead.
+ */
+let chapterId = null;
+const storeKey = (id) => `pangea:${id}`;
+
+function saveChapter() {
+  if (!chapterId) return;
+  const data = { reconAge, savedAt: Date.now(),
+    plates: Object.fromEntries(plates.map((p) => [p.id, [...p.q]])) };
+  try { localStorage.setItem(storeKey(chapterId), JSON.stringify(data)); } catch { /* not available */ }
+}
+
+function loadSaved(id) {
+  try { return JSON.parse(localStorage.getItem(storeKey(id)) || 'null'); } catch { return null; }
+}
+
+/**
+ * Total rotations, relative to the mantle, at the file's oldest age, from a rotation
+ * file of the kind Export writes (each plate: a line at 0 Ma and one at the
+ * reconstruction age, relative to 000 or to another plate in the file).
+ */
+function parseRotationFile(text) {
+  const lines = {};
+  for (const raw of text.split(/\r?\n/)) {
+    const f = raw.split('!')[0].trim().split(/\s+/).map(Number);
+    if (f.length < 6 || f.some(Number.isNaN)) continue;
+    const [id, age, lat, lon, angle, fixed] = f;
+    if (id === 999 || age <= 0) continue;
+    if (!lines[id] || age > lines[id].age) lines[id] = { age, fixed, q: quatFromAxisAngle(lonLatToVec3(lon, lat), angle * DEG) };
+  }
+  const total = {};
+  const resolve = (id, seen = new Set()) => {
+    if (id === 0) return IDENTITY;
+    if (total[id]) return total[id];
+    const l = lines[id];
+    if (!l || seen.has(id)) return null;
+    seen.add(id);
+    const up = resolve(l.fixed, seen);
+    return up && (total[id] = quatMultiply(up, l.q));
+  };
+  const ages = Object.values(lines).map((l) => l.age);
+  for (const id of Object.keys(lines)) resolve(Number(id));
+  return { reconAge: ages.length ? Math.max(...ages) : null, plates: total };
+}
+
+/** Scale a rotation's angle, keeping its pole: the same steady motion, run for longer. */
+function scaleRotation(q, k) {
+  const { lat, lon, angle } = quatToPoleAngle(q);
+  return angle < 1e-9 ? IDENTITY : quatFromAxisAngle(lonLatToVec3(lon, lat), angle * k * DEG);
+}
+
+/*
+ * A chapter with `buildsOn` starts from earlier chapters' work:
+ *   fit:    a chapter whose plates' positions RELATIVE to the mother plate are kept;
+ *   motion: a chapter whose mother-plate rotation is kept, rescaled to this chapter's
+ *           age if that chapter's differed -- the same pole at the same rate. With one
+ *           steady rotation that is exact up to the older chapter's age; beyond it, an
+ *           extrapolation.
+ * Positions come out as  q_P = q_mother * (q3_mother^-1 q3_P).
+ */
+const sources = { fit: null, motion: null };
+
+function composeStart(chapter) {
+  const m = mother.id;
+  let qm = IDENTITY;
+  const motion = sources.motion?.plates[m];
+  if (motion) qm = scaleRotation(motion, reconAge / sources.motion.reconAge);
+  const fit = sources.fit?.plates;
+  for (const p of plates) {
+    const rel = fit && fit[p.id] && fit[m] ? quatMultiply(quatConjugate(fit[m]), fit[p.id]) : IDENTITY;
+    p.q = p === mother ? qm : quatMultiply(qm, rel);
+    initialQ.set(p, p.q);
+    showPlate(p);
+  }
+  describeSources(chapter);
+}
+
+function describeSources(chapter) {
+  const { fit, motion } = chapter.buildsOn;
+  // "3. Beneath the waves" reads as "chapter 3, Beneath the waves".
+  const title = (id) => (chapterTitles[id] || id).replace(/^(\d+)\.\s*/, 'chapter $1, ');
+  const say = (src, id, what, none) => (src
+    ? `${what} from ${title(id)}${src.file ? ` (file ${src.file})` : ''}.`
+    : none);
+  const k = sources.motion ? reconAge / sources.motion.reconAge : 1;
+  document.getElementById('carry-note').textContent = [
+    say(sources.fit, fit, 'The fit between the plates is yours', `No fit from ${title(fit)} yet: plates start as they are today.`),
+    say(sources.motion, motion, `${mother.name}'s motion over the hotspots is yours`, `No motion from ${title(motion)} yet: ${mother.name} starts as it is today.`),
+    sources.motion && Math.abs(k - 1) > 1e-9
+      ? `It was a rotation to ${sources.motion.reconAge} Ma; here it runs on at the same rate about the same pole to ${reconAge} Ma.` : '',
+  ].filter(Boolean).join(' ');
+}
+
+let chapterTitles = {};
+
+function setUpCarry(chapter) {
+  if (!chapter.buildsOn || !mother) return;
+  document.getElementById('carry-row').hidden = false;
+  sources.fit = loadSaved(chapter.buildsOn.fit);
+  sources.motion = loadSaved(chapter.buildsOn.motion);
+  composeStart(chapter);
+  for (const [kind, input] of [['fit', 'load-fit'], ['motion', 'load-motion']]) {
+    document.getElementById(input).addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const parsed = parseRotationFile(await file.text());
+      e.target.value = '';
+      if (!parsed.reconAge || !parsed.plates[mother.id]) {
+        document.getElementById('carry-note').textContent =
+          `${file.name} has no rotation for ${mother.name} (plate ${mother.id}), so it cannot be used.`;
+        return;
+      }
+      undoStack.push(snapshot());
+      sources[kind] = { ...parsed, file: file.name };
+      composeStart(chapter);
+      updateTable();
+      requestDraw();
+    });
+  }
+}
 
 // ---- Export -------------------------------------------------------------------------
 
@@ -1061,6 +1189,8 @@ async function loadChapter() {
   // A new chapter is a new page: plates, rotations and undo history all start fresh.
   menu.addEventListener('change', () => { location.search = `?chapter=${menu.value}`; });
 
+  chapterId = entry.id;
+  chapterTitles = Object.fromEntries(index.map((c) => [c.id, c.title]));
   document.getElementById('intro').textContent = chapter.intro;
   document.getElementById('questions').innerHTML =
     (chapter.questions || []).map((q) => `<li>${q}</li>`).join('');
@@ -1078,6 +1208,7 @@ async function main() {
   document.getElementById('legend-max').textContent = reconAge;
   for (const p of plates) p.parent = null;
   setUpTree(chapter);
+  setUpCarry(chapter);
   if (chapter.hotspots) await loadHotspots(chapter);
   if (chapter.trailGrids) await loadTrailCells(chapter);
   for (const p of plates) showPlate(p);

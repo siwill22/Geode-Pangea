@@ -209,3 +209,12 @@ input[type=checkbox] { accent-color: var(--accent); }
 #link-row { align-items: baseline; flex-wrap: wrap; }
 #link-note { margin: 0; flex: 1 1 12rem; }
 canvas.linking, canvas.linking.over-plate { cursor: crosshair; }
+
+/* Chapters that build on earlier ones: what was carried over, and file fallbacks. */
+.carry .note { margin-bottom: 0.4rem; }
+.file-button {
+  font-size: 0.78rem; padding: 0.3rem 0.6rem; border-radius: 6px; cursor: pointer;
+  border: 1px solid rgba(143, 212, 240, 0.35); background: rgba(143, 212, 240, 0.08);
+}
+.file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.file-button:focus-within { outline: 2px solid #6fe3ff; }
