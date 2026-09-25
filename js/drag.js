@@ -55,7 +55,7 @@ const undoStack = [];      // { plate, q } as it was before each drag
  * motion the .rot file describes. Playing never touches `q`, which is why scrubbing
  * back returns to the reconstruction exactly.
  */
-let reconAge = 100;        // the age the saved rotations stand for (the Age box)
+let reconAge = 200;        // the age the saved rotations stand for (set by the chapter)
 let shownAge = 100;        // the age being displayed, reconAge .. 0
 let playing = null;        // { from, to, start } while animating
 
@@ -438,7 +438,7 @@ function updateTable() {
  * with that model's own continental polygons -- though only the principal block of each
  * group carries that id there.
  */
-function rotationFile(age) {
+function rotationFile(age = reconAge) {
   const line = (id, t, lat, lon, ang, name) => [
     String(id).padStart(3, '0'), t.toFixed(1).padStart(7), lat.toFixed(4).padStart(9),
     lon.toFixed(4).padStart(10), ang.toFixed(4).padStart(10), '000', `! ${name}`,
@@ -588,16 +588,8 @@ document.getElementById('scrub').addEventListener('input', (e) => {
   setShownAge(reconAge - Number(e.target.value));
 });
 
-document.getElementById('age').addEventListener('change', (e) => {
-  // The saved rotations now stand for this age; the display follows at the same fraction.
-  const frac = reconAge > 0 ? shownAge / reconAge : 1;
-  reconAge = Math.max(1, Number(e.target.value) || reconAge);
-  e.target.value = reconAge;
-  setShownAge(frac * reconAge);
-});
-
 document.getElementById('export').addEventListener('click', () => {
-  const age = reconAge;
+  const age = reconAge;   // the same default rotationFile() uses
   download(rotationFile(age), `pangea-${age}Ma.rot`);
 });
 
@@ -619,14 +611,15 @@ async function loadChapter() {
   document.getElementById('intro').textContent = chapter.intro;
   document.getElementById('questions').innerHTML =
     (chapter.questions || []).map((q) => `<li>${q}</li>`).join('');
-  if (chapter.exportAge != null) document.getElementById('age').value = chapter.exportAge;
   return chapter;
 }
 
 async function main() {
   const chapter = await loadChapter();
   plates = await loadPlates(chapter);
-  reconAge = Math.max(1, Number(document.getElementById('age').value) || 100);
+  // The age the student's arrangement stands for. Fixed per chapter: with one rotation per
+  // plate it only labels the time bar and the exported file, so it is not a control.
+  reconAge = chapter.reconstructionAge ?? 200;
   shownAge = reconAge;
   for (const p of plates) p.shown = p.q;
   resize();

@@ -107,16 +107,7 @@ kbd {
   gap: 0.5rem 0.9rem;
   margin-top: 0.55rem;
 }
-.toggle, .age { display: flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; }
-.age input {
-  width: 4.5rem;
-  font: inherit;
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 0.15rem 0.35rem;
-}
+.toggle { display: flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; }
 button {
   font: inherit;
   font-size: 0.82rem;

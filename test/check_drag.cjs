@@ -189,7 +189,7 @@ function check(ok, msg) {
   const dump = await page.evaluate(() => {
     const d = window.__dragPlates;
     return {
-      rot: d.rotationFile(100),
+      rot: d.rotationFile(),   // exactly what the Export button writes
       plates: d.plates.map((p) => ({ id: p.id, name: p.name,
         home: Array.from(p.pickLayer.home), xyz: Array.from(p.pickLayer.xyz) })),
     };

@@ -17,7 +17,7 @@ file.
   Your rotations are never changed, and grabbing a plate returns to the reconstruction
   age to edit it.
 - **Export .rot** writes, for each plate, the identity at 0 Ma and the dragged rotation
-  at the chosen age, relative to plate 000.
+  at the chapter's reconstruction age (200 Ma in chapters 1–3), relative to plate 000.
 
 Plain static site with no build step: serve the folder and open `index.html`.
 

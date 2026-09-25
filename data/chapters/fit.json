@@ -2,12 +2,14 @@
   "id": "fit",
   "title": "Fit the continents",
   "set": "Muller2019/six.json",
-  "show": {"crust": false},
+  "show": {
+    "crust": false
+  },
   "intro": "Six continents, as their coastlines look today. Drag them together and see how well they fit.",
   "questions": [
     "Which coastlines fit best? Which refuse to fit, however you turn them?",
     "Where does the fit leave gaps, and where do continents overlap?",
     "Why might today's coastline be the wrong edge to fit?"
   ],
-  "exportAge": 200
+  "reconstructionAge": 200
 }
