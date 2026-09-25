@@ -1228,16 +1228,7 @@ document.getElementById('misfit-toggle').addEventListener('click', () => {
 });
 try { if (localStorage.getItem('pangea:misfit-open') === '0') setMisfitOpen(false); } catch { /* not available */ }
 
-// The key folds the same way.
-function setKeyOpen(open) {
-  document.getElementById('key').classList.toggle('collapsed', !open);
-  document.getElementById('key-toggle').setAttribute('aria-expanded', String(open));
-  try { localStorage.setItem('pangea:key-open', open ? '1' : '0'); } catch { /* not available */ }
-}
-document.getElementById('key-toggle').addEventListener('click', () => {
-  setKeyOpen(document.getElementById('key').classList.contains('collapsed'));
-});
-try { if (localStorage.getItem('pangea:key-open') === '0') setKeyOpen(false); } catch { /* not available */ }
+
 
 document.getElementById('ghosts').addEventListener('change', (e) => {
   showGhosts = e.target.checked;
