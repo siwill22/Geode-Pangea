@@ -27,15 +27,18 @@ show. Pick one from the menu, or link it directly with `?chapter=<id>`.
 
 | id | Chapter |
 |---|---|
-| `fit` | 1. Fit the continents: coastlines only |
-| `shelves` | 2. Beneath the waves: the same continents, with their submerged continental crust |
+| `fit` | 1. Fit the continents: six continents, coastlines only |
+| `blocks` | 2. More than six: plus India, Iberia, Madagascar, Greenland and Mexico |
+| `shelves` | 3. Beneath the waves: the chapter-2 plates with their submerged continental crust |
 
 ## Data
 
 Plate sets (`data/<model>/<set>.json`) are built from a published plate model by
-`prep/build_chapters.py`. The model is currently Müller et al. (2019): coastlines,
-continental polygons and rotations, read from the gprm cache. Each continent is a group
-of the model's blocks:
+`prep/build_chapters.py`. Plates come from Müller et al. (2019): continental polygons and
+rotations, read from the gprm cache. Land is Natural Earth 1:110m, drawn clipped to each
+plate's continental crust. The model's own coastline file isn't used, because it joins
+islands to their mainland with long spokes that fill as giant triangles. Each continent
+is a group of the model's blocks:
 
 - **Seeds:** each group starts from a few plate ids, named as the model's own
   continental-polygon file names them (`prep/groups/<model>.json`). A seed whose name

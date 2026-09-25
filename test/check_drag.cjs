@@ -30,7 +30,7 @@ function check(ok, msg) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(URL);
-  await page.waitForFunction(() => window.__dragPlates?.plates.length === 6);
+  await page.waitForFunction(() => window.__dragPlates?.plates.length > 0);
   console.log(`chapter ${CHAPTER}`);
   await page.screenshot({ path: path.join(out, '0-start.png') });
 

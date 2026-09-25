@@ -3,11 +3,12 @@ Build the plate sets the Pangea chapters draw, from a published plate model.
 
     conda run -n pygmt17 python prep/build_chapters.py [--model Muller2019] [--figures DIR]
 
-For each set in prep/groups/<model>.json this writes data/<model>/<set>.json. Each
-file holds, per group:
+For each set in prep/groups/<model>.json this writes data/<model>/<set>.json. The file
+holds one global list of land rings (Natural Earth 1:110m), and, per group:
 
-- `land`: coastline rings.
 - `crust`: continental-polygon rings, including submerged continental crust.
+- `land`: indices of the land rings that may overlap this group's crust. The page draws
+  land clipped to each group's crust, so each block shows exactly its own land.
 - `members`: the model plate ids the group contains, with their names.
 - `reference`: the principal plate's rotation relative to plate 000, every 5 Myr, as
   [lat, lon, angle].
@@ -43,7 +44,6 @@ EARTH_RADIUS_KM = 6371.0
 MODELS = {
     'Muller2019': dict(
         root='~/Library/Caches/gprm/Muller2019/Muller_etal_2019_PlateMotionModel_v2.0_Tectonics',
-        coastlines='StaticGeometries/Coastlines/Global_coastlines_2019_v1_low_res.shp',
         crust='StaticGeometries/ContinentalPolygons/'
               'Global_EarthByte_GPlates_PresentDay_ContinentalPolygons_2019_v1.shp',
         rotations='*.rot',
@@ -55,10 +55,15 @@ MODELS = {
 # smaller than this are not worth dragging, and they are most of the vertex count.
 # Deliberately coarse: the look is slightly cartoony, and a student fitting continents
 # is not helped by fjords.
-TOLERANCE_DEG = {'land': 0.3, 'crust': 0.3}
+TOLERANCE_DEG = {'land': 0.3, 'crust': 0.15}
 MIN_AREA_KM2 = {'land': 15000.0, 'crust': 20000.0}
 MAX_AREA_CHANGE = 0.08          # per isolated ring (islands)
 MAX_GROUP_AREA_CHANGE = 0.03    # per continent, all its rings together
+# Land comes from Natural Earth, not the model's own coastline file: that file stitches
+# islands and lakes onto their mainland with long spokes (Baltica's ring runs from 28E 71N
+# to 15E 59N to 44E 49N), which fill as giant triangles. Which block owns which land is
+# decided in the browser instead, by clipping land to each block's continental polygons.
+NE_LAND = '~/.local/share/cartopy/shapefiles/natural_earth/physical/ne_110m_land.shp'
 LIPS = '~/data/LIPs/Shapefiles/Earthbyte_LIPs_20121121/EarthByte_LIPs_20121121.shp'
 REFERENCE_STEP = 5
 
@@ -212,6 +217,36 @@ def arc_distance(p, a, b):
     return np.where(on_arc, d, ends)
 
 
+def cap(xyz):
+    """(centre, angular radius) of a cap about the ring's mean direction holding every vertex."""
+    c = xyz.mean(axis=0)
+    c = c / np.linalg.norm(c)
+    return c, float(np.arccos(np.clip((xyz @ c).min(), -1, 1)))
+
+
+def load_land():
+    """Natural Earth land, cleaned, small islands dropped, simplified and densified."""
+    rings = []
+    for ft in pygplates.FeatureCollection(os.path.expanduser(NE_LAND)):
+        for g in ft.get_geometries():
+            ring = clean_ring(g.to_lat_lon_array())
+            if len(ring) < 3:
+                continue
+            area = ring_area_km2(ring)
+            if area < MIN_AREA_KM2['land']:
+                continue
+            tol = TOLERANCE_DEG['land']
+            while True:
+                simple = simplify_ring(ring, tol)
+                change = abs(ring_area_km2(simple) - area) / area if len(simple) >= 3 else 1
+                if change <= MAX_AREA_CHANGE or tol < 0.005:
+                    break
+                tol /= 2
+            rings.append(densify_ring(simple))
+    print(f'land: {len(rings)} Natural Earth rings, {sum(len(r) for r in rings)} vertices')
+    return rings
+
+
 def ring_area_km2(latlon):
     return pygplates.PolygonOnSphere(latlon.tolist()).get_area() * EARTH_RADIUS_KM ** 2
 
@@ -345,6 +380,7 @@ def reference_rotations(rotation_model, pid, max_age):
 # ---- Build ---------------------------------------------------------------------------
 
 def build_set(model_name, set_name, spec, model, land, crust, names, rotation_model):
+    """`land` is the global list of simplified Natural Earth rings (lat/lon arrays)."""
     groups = spec['groups']
     # Only plates the model itself calls continental -- ones with continental polygons --
     # can join a continent. Islands on oceanic plates (Hawaii, on the Pacific plate) have
@@ -377,10 +413,11 @@ def build_set(model_name, set_name, spec, model, land, crust, names, rotation_mo
     out_groups = [dict(name=g['name'], colour=g.get('colour'), principal=g['principal'],
                        hidden=bool(g.get('hidden')), members=[], land=[], crust=[])
                   for g in groups]
+    crust_xyz = [[] for _ in groups]      # simplified crust rings as unit vectors, per group
     stats = collections.Counter()
     before_area = [collections.Counter() for _ in groups]
     after_area = [collections.Counter() for _ in groups]
-    for kind, polys in (('land', land), ('crust', crust)):
+    for kind, polys in (('crust', crust),):
         todo = []                       # (group index, plate id, name, cleaned ring, area)
         for pid, name, ll, *_ in polys:
             gi = group_of.get(pid)
@@ -420,9 +457,20 @@ def build_set(model_name, set_name, spec, model, land, crust, names, rotation_mo
             stats[f'{kind} vertices after'] += len(simple)
             out_groups[gi][kind].append(
                 [round(float(v), 3) for lat, lon in simple for v in (lon, lat)])
+            crust_xyz[gi].append(to_xyz(simple))
+
+    # Land rings each group might own: those whose bounding cap meets one of the group's
+    # crust caps. The browser clips land to the crust, so a generous match costs only
+    # drawing time; a missed one would lose land.
+    land_caps = [cap(to_xyz(ll)) for ll in land]
+    for gi in range(len(groups)):
+        caps = [cap(x) for x in crust_xyz[gi]]
+        out_groups[gi]['land'] = [
+            i for i, (lc, lr) in enumerate(land_caps)
+            if any(np.arccos(np.clip(lc @ c, -1, 1)) <= lr + r for c, r in caps)]
 
     for gi, g in enumerate(groups):
-        for kind in ('land', 'crust'):
+        for kind in ('crust',):
             a, b = before_area[gi][kind], after_area[gi][kind]
             if a and abs(b - a) / a > MAX_GROUP_AREA_CHANGE:
                 raise SystemExit(f'{set_name}: {g["name"]} {kind} area changed {abs(b - a) / a:.1%} '
@@ -441,11 +489,13 @@ def build_set(model_name, set_name, spec, model, land, crust, names, rotation_mo
     for g in out_groups:
         tag = ' (hidden)' if g['hidden'] else ''
         print(f'  {g["name"]:15s}{tag:9s} {len(g["members"]):3d} plate ids, '
-              f'{len(g["land"]):3d} land rings, {len(g["crust"]):3d} crust rings')
+              f'{len(g["crust"]):3d} crust rings, may own {len(g["land"]):3d} land rings')
 
     hidden = [g['name'] for g in out_groups if g['hidden']]
     shown = [{k: v for k, v in g.items() if k != 'hidden'} for g in out_groups if not g['hidden']]
     return dict(model=model_name, set=set_name, referenceStep=REFERENCE_STEP,
+                land=[[round(float(v), 3) for lat, lon in ll for v in (lon, lat)] for ll in land],
+                landSource='Natural Earth 1:110m land (public domain)',
                 groups=shown, hiddenGroups=hidden,
                 dropped=[[round(float(v), 2) for lat, lon in densify_ring(clean_ring(ll), 2.0) for v in (lon, lat)]
                          for _, _, ll in dropped if len(clean_ring(ll)) >= 3],
@@ -480,11 +530,12 @@ def figure(data, path):
         fig.plot(x=np.append(a[:, 0], a[0, 0]), y=np.append(a[:, 1], a[0, 1]), fill='gray60',
                  pen='0.3p,black')
     for g in data['groups']:
-        for kind, fill in (('crust', g['colour'] + '@55'), ('land', g['colour'])):
-            for r in g[kind]:
-                a = np.array(r).reshape(-1, 2)
-                fig.plot(x=np.append(a[:, 0], a[0, 0]), y=np.append(a[:, 1], a[0, 1]),
-                         fill=fill)
+        for r in g['crust']:
+            a = np.array(r).reshape(-1, 2)
+            fig.plot(x=np.append(a[:, 0], a[0, 0]), y=np.append(a[:, 1], a[0, 1]), fill=g['colour'])
+    for r in data['land']:
+        a = np.array(r).reshape(-1, 2)
+        fig.plot(x=np.append(a[:, 0], a[0, 0]), y=np.append(a[:, 1], a[0, 1]), pen='0.4p,black')
     y = -0.9
     for g in data['groups']:
         fig.text(position='BL', text=f'{g["name"]}: {len(g["members"])} plate ids',
@@ -505,11 +556,9 @@ if __name__ == '__main__':
 
     model = MODELS[args.model]
     root = os.path.expanduser(model['root'])
-    land = load_polygons(os.path.join(root, model['coastlines']))
+    land = load_land()
     crust = load_polygons(os.path.join(root, model['crust']))
     names = plate_names(crust)
-    for pid, name, *_ in land:
-        names.setdefault(pid, name or '')
     if args.lip_report:
         lip_report(crust)
     rotation_model = pygplates.RotationModel(sorted(glob.glob(os.path.join(root, model['rotations']))))

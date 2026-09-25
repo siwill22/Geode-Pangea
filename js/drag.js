@@ -43,6 +43,7 @@ const view = { lon: 10, lat: 15 };
 let plates = [];           // in draw order: last is on top
 let active = null;         // the plate most recently touched
 let showGhosts = true;
+let showCrust = false;     // set by the chapter
 const undoStack = [];      // { plate, q } as it was before each drag
 
 const rotate = (q, v) => mat3Apply(quatToMat3(q), v);
@@ -95,38 +96,43 @@ function layerFor(id, rings, options) {
 
 async function loadPlates(chapter) {
   const set = await loadJSON(`data/${chapter.set}`);
-  const showCrust = !!chapter.show?.crust;
+  showCrust = !!chapter.show?.crust;
 
   return set.groups.map((g) => {
     const id = g.principal;
-    const land = packRings(g.land);
-    const crust = showCrust ? packRings(g.crust) : [];
-    const layers = [];
-    if (crust.length) {
-      layers.push(layerFor(id, crust, { fill: hexWithAlpha(g.colour, 0.42), stroke: null }));
-    }
-    layers.push(layerFor(id, land, { fill: hexWithAlpha(g.colour, 0.9), stroke: null }));
-    const ghost = layerFor(id, showCrust ? crust : land,
-      { outline: true, stroke: hexWithAlpha(g.colour, 0.6), lineWidth: 1 });
+    const crust = packRings(g.crust);
+    const land = packRings(g.land.map((i) => set.land[i]));
 
-    // What you can grab: the crust where it is shown, since that is the continent's real
-    // extent; otherwise the land. Each ring gets a bounding cap so a click far away is
-    // rejected with one dot product instead of a walk around the ring.
-    const pickLayer = layers[0];
-    const pickRings = pickLayer.rings.map((r) => ({
-      offset: r.offset, count: r.count, ...ringBoundingCap(pickLayer.home, r.offset, r.count),
+    // Land is Natural Earth, shared by every plate; each plate draws it clipped to its
+    // own continental crust (see drawPlate). Crust and land turn together, so the clip is
+    // exactly this block's land wherever the block goes.
+    const crustLayer = layerFor(id, crust, { fill: hexWithAlpha(g.colour, 0.4), stroke: null });
+    const landLayer = layerFor(id, land, {
+      fill: hexWithAlpha(g.colour, 0.92), stroke: 'rgba(7, 12, 22, 0.5)', lineWidth: 0.8,
+    });
+    const ghostStyle = { outline: true, stroke: hexWithAlpha(g.colour, 0.6), lineWidth: 1 };
+
+    // What you can grab: crust where it is shown, since that is the block's real extent;
+    // otherwise land that lies on the block's crust. Each ring gets a bounding cap so a
+    // click far away is rejected with one dot product instead of a walk round the ring.
+    const caps = (layer) => layer.rings.map((r) => ({
+      offset: r.offset, count: r.count, ...ringBoundingCap(layer.home, r.offset, r.count),
     }));
 
-    // Area-weighted centre of everything grabbable -- the axis a twist turns about.
+    // Area-weighted centre of the block's crust -- the axis a twist turns about.
     const c = [0, 0, 0];
-    (crust.length ? crust : land).forEach((r, k) => {
-      const v = ringCentroid(pickLayer.home, pickLayer.rings[k].offset, pickLayer.rings[k].count);
+    crust.forEach((r, k) => {
+      const ring = crustLayer.rings[k];
+      const v = ringCentroid(crustLayer.home, ring.offset, ring.count);
       c[0] += r.area * v[0]; c[1] += r.area * v[1]; c[2] += r.area * v[2];
     });
     const n = Math.hypot(...c);
 
     return {
-      name: g.name, id, colour: g.colour, layers, ghost, pickLayer, pickRings,
+      name: g.name, id, colour: g.colour,
+      crustLayer, landLayer, layers: [crustLayer, landLayer],
+      ghostCrust: layerFor(id, crust, ghostStyle), ghostLand: layerFor(id, land, ghostStyle),
+      pickLayer: crustLayer, crustCaps: caps(crustLayer), landCaps: caps(landLayer),
       centre: [c[0] / n, c[1] / n, c[2] / n],
       q: IDENTITY,
     };
@@ -178,16 +184,22 @@ function screenToSphere(clientX, clientY, clamp = false) {
  * instead of one per vertex. The test itself is on the sphere (a winding number), so the
  * pole inside Antarctica and plates straddling the antimeridian need no special cases.
  */
+function inRings(layer, caps, v) {
+  for (const r of caps) {
+    const { centre: c } = r;
+    if (v[0] * c[0] + v[1] * c[1] + v[2] * c[2] < r.cosRadius) continue;
+    if (ringContains(layer.home, r.offset, r.count, v)) return true;
+  }
+  return false;
+}
+
 function pick(p) {
   if (!p) return null;
   for (let k = plates.length - 1; k >= 0; k--) {
     const plate = plates[k];
     const home = rotate(quatConjugate(plate.q), p);
-    for (const r of plate.pickRings) {
-      const { centre: c } = r;
-      if (home[0] * c[0] + home[1] * c[1] + home[2] * c[2] < r.cosRadius) continue;
-      if (ringContains(plate.pickLayer.home, r.offset, r.count, home)) return plate;
-    }
+    if (!inRings(plate.crustLayer, plate.crustCaps, home)) continue;
+    if (showCrust || inRings(plate.landLayer, plate.landCaps, home)) return plate;
   }
   return null;
 }
@@ -288,9 +300,35 @@ function draw() {
   ctx.stroke();
 
   drawGraticule();
-  if (showGhosts) for (const p of plates) if (p.q !== IDENTITY) p.ghost.draw(ctx, projector);
-  for (const p of plates) for (const layer of p.layers) layer.draw(ctx, projector);
+  if (showGhosts) {
+    for (const p of plates) {
+      if (p.q === IDENTITY) continue;
+      if (showCrust) p.ghostCrust.draw(ctx, projector);
+      else clipTo(p.ghostCrust, () => p.ghostLand.draw(ctx, projector));
+    }
+  }
+  for (const p of plates) drawPlate(p);
   drawActiveRotation();
+}
+
+/** Draw a plate: its crust (in chapters that show it), then its land, clipped to its crust. */
+function drawPlate(p) {
+  if (showCrust) p.crustLayer.draw(ctx, projector);
+  clipTo(p.crustLayer, () => p.landLayer.draw(ctx, projector));
+}
+
+/** Run `fn` with the canvas clipped to a layer's filled rings, as currently projected. */
+function clipTo(layer, fn) {
+  const { fillable } = layer.projectRings(projector);
+  ctx.save();
+  ctx.beginPath();
+  for (const buf of fillable) {
+    ctx.moveTo(buf[0], buf[1]);
+    for (let i = 2; i < buf.length; i += 2) ctx.lineTo(buf[i], buf[i + 1]);
+  }
+  ctx.clip('nonzero');
+  fn();
+  ctx.restore();
 }
 
 let frameQueued = false;

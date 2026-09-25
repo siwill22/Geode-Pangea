@@ -1,0 +1,13 @@
+{
+  "id": "blocks",
+  "title": "More than six",
+  "set": "Muller2019/blocks.json",
+  "show": {"crust": false},
+  "intro": "Some pieces of today's continents moved on their own: India, Iberia, Madagascar, Greenland and Mexico are now separate plates. Try the fit again.",
+  "questions": [
+    "Where does freeing a piece close a gap or remove an overlap you could not fix before?",
+    "Where did India have to come from to reach Asia? What was in the way?",
+    "If today's continents are not the pieces that moved, how would you find the pieces that did?"
+  ],
+  "exportAge": 200
+}
