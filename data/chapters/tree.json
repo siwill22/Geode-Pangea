@@ -17,7 +17,7 @@
   ],
   "hotspotData": "hotspots_maher2015.json",
   "trailGrids": "trail_grids.json",
-  "intro": "Every plate can move with another. The plates start with your fit from chapter 3, and Africa, the star, with its motion over the hotspots from chapter 4. Switch on Link plates, then click a plate and click the plate it should move with (or drag from one to the other); click the ocean to set it free again. Lines join each plate to the one it moves with. Build the links back to Africa, then move Africa: the whole assembly follows, and the hotspot trails tell you whether Africa's motion still fits.",
+  "intro": "Every plate can move with another. You start from your chapter 3 fit, with Africa (the star) moving as in chapter 4. Switch on Link plates, click a plate, then the plate it moves with; click the ocean to free it. Link everything back to Africa, then move Africa: the assembly follows, and the hotspot trails show whether its motion still fits.",
   "questions": [
     "Link every plate so that moving Africa carries the whole supercontinent. Is there more than one way to do it?",
     "Chapter 4's rotation ran to 150 Ma; here it runs on to 200 Ma. Does the hotspot misfit change? Adjust Africa and watch the rest follow.",

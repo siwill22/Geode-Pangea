@@ -820,9 +820,8 @@ function updateTable() {
   if (!drag) saveChapter();
   if (tree) {
     document.getElementById('table-note').textContent =
-      `Each row is a plate's rotation relative to the plate it moves with, from ${reconAge} Ma to `
-      + `today. ${mother.name} is the mother plate: its row is its rotation relative to the mantle, `
-      + 'as is any plate that moves with nothing.';
+      'Each row: the plate\'s rotation relative to the plate it moves with (the mantle, '
+      + `for ${mother.name} and any plate that moves with nothing).`;
   }
   updateMisfit();
 }
@@ -930,10 +929,10 @@ function describeSources(chapter) {
     : none);
   const k = sources.motion ? reconAge / sources.motion.reconAge : 1;
   document.getElementById('carry-note').textContent = [
-    say(sources.fit, fit, 'The fit between the plates is yours', `No fit from ${title(fit)} yet: plates start as they are today.`),
-    say(sources.motion, motion, `${mother.name}'s motion over the hotspots is yours`, `No motion from ${title(motion)} yet: ${mother.name} starts as it is today.`),
+    say(sources.fit, fit, 'Fit', `No fit from ${title(fit)} yet.`),
+    say(sources.motion, motion, `${mother.name}'s motion`, `No ${mother.name} motion from ${title(motion)} yet.`),
     sources.motion && Math.abs(k - 1) > 1e-9
-      ? `It was a rotation to ${sources.motion.reconAge} Ma; here it runs on at the same rate about the same pole to ${reconAge} Ma.` : '',
+      ? `(Its ${sources.motion.reconAge} Ma rotation runs on, same pole and rate, to ${reconAge} Ma.)` : '',
   ].filter(Boolean).join(' ');
 }
 
@@ -1151,7 +1150,7 @@ function setProjection(name) {
   }
   try { localStorage.setItem('pangea:projection', name); } catch { /* not available */ }
   document.getElementById('hint-view').textContent = flat()
-    ? 'Drag the ocean sideways, or scroll sideways, to slide the map.'
+    ? 'Drag the ocean or scroll sideways to slide the map.'
     : 'Drag the ocean to turn the globe.';
   canvas.setAttribute('aria-label', flat()
     ? 'World map. Drag a continent to move it; drag the ocean sideways to slide the map.'
@@ -1229,6 +1228,17 @@ document.getElementById('misfit-toggle').addEventListener('click', () => {
 });
 try { if (localStorage.getItem('pangea:misfit-open') === '0') setMisfitOpen(false); } catch { /* not available */ }
 
+// The key folds the same way.
+function setKeyOpen(open) {
+  document.getElementById('key').classList.toggle('collapsed', !open);
+  document.getElementById('key-toggle').setAttribute('aria-expanded', String(open));
+  try { localStorage.setItem('pangea:key-open', open ? '1' : '0'); } catch { /* not available */ }
+}
+document.getElementById('key-toggle').addEventListener('click', () => {
+  setKeyOpen(document.getElementById('key').classList.contains('collapsed'));
+});
+try { if (localStorage.getItem('pangea:key-open') === '0') setKeyOpen(false); } catch { /* not available */ }
+
 document.getElementById('ghosts').addEventListener('change', (e) => {
   showGhosts = e.target.checked;
   requestDraw();
@@ -1259,6 +1269,7 @@ function setUpTree(chapter) {
   if (!chapter.tree) return;
   mother = plates.find((p) => p.id === chapter.tree.mother);
   document.body.classList.add('tree');   // a wider panel, for the "moves with" column
+  for (const id of ['key-mother', 'key-link']) document.getElementById(id).hidden = false;
   document.getElementById('link-row').hidden = false;
   for (const [child, parent] of chapter.tree.links || []) {
     setParent(plates.find((p) => p.id === child), plates.find((p) => p.id === parent));
@@ -1281,7 +1292,9 @@ async function loadHotspots(chapter) {
     return { name: h.name, h: lonLatToVec3(h.lon, h.lat), samples,
       plates: on.length || plates.length !== 1 ? on : [plates[0]] };
   }).filter((h) => h.plates.length);
-  document.getElementById('legend').hidden = false;
+  for (const id of ['key-age', 'key-hotspot', 'key-sample', 'key-trail', 'key-faint']) {
+    document.getElementById(id).hidden = false;
+  }
 }
 
 /** Hotspot-chain seafloor cells on the chapter's plates. Needs reconAge (for colours). */
@@ -1293,7 +1306,7 @@ async function loadTrailCells(chapter) {
   trailCells = data.cells.filter((c) => byMember.has(c.plate)).map((c) => ({
     v: lonLatToVec3(c.lon, c.lat), age: c.age, colour: ageColour(c.age), plate: byMember.get(c.plate),
   }));
-  for (const id of ['legend-trail', 'source-trail']) document.getElementById(id).hidden = false;
+  for (const id of ['key-seafloor', 'source-trail']) document.getElementById(id).hidden = false;
 }
 
 /** The chapter named by ?chapter=, or the first one. */

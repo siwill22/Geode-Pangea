@@ -18,10 +18,13 @@
     <select id="chapter" aria-label="Chapter"></select>
   </label>
   <p class="intro" id="intro"></p>
-  <ol class="questions" id="questions"></ol>
+  <details class="questions-box">
+    <summary>Questions to try</summary>
+    <ol class="questions" id="questions"></ol>
+  </details>
   <p class="hint">
-    Drag a continent to move it over the sphere. <kbd>Shift</kbd>-drag, or switch on
-    <em>Twist</em>, to spin it about its own centre. <span id="hint-view">Drag the ocean to turn the globe.</span>
+    Drag a continent to move it; <kbd>Shift</kbd>-drag or <em>Twist</em> spins it.
+    <span id="hint-view">Drag the ocean to turn the globe.</span>
   </p>
 
   <div id="carry-row" class="carry" hidden>
@@ -43,25 +46,10 @@
     <tbody></tbody>
   </table>
   <p class="note" id="table-note">
-    Each row is the plate's total rotation from its present-day position &mdash; one
-    Euler pole and angle, however many drags it took to get there.
+    Each row: the plate's one total rotation from today, however many drags it took.
   </p>
 
-  <div class="legend" id="legend" hidden>
-    <span class="ring"></span> hotspot
-    <span class="ramp" aria-hidden="true"></span> <span>0</span>&ndash;<span id="legend-max">150</span> Ma:
-    <span class="sq"></span> dated sample, <span class="dot"></span> your predicted
-    trail, a disc every 10 Myr in the colour of its age (faint: not formed yet at the age shown)
-    <span id="legend-trail" hidden><br><span class="ramp" aria-hidden="true"></span> raised
-    seafloor along each chain, coloured by its interpolated age</span>
-  </div>
 
-  <div class="row">
-    <span class="segmented" role="group" aria-label="View">
-      <button type="button" data-projection="globe" aria-pressed="true">Globe</button>
-      <button type="button" data-projection="map" aria-pressed="false">Map</button>
-    </span>
-  </div>
   <div class="row">
     <label class="toggle"><input type="checkbox" id="twist"> Twist</label>
     <label class="toggle"><input type="checkbox" id="ghosts" checked> Present-day outlines</label>
@@ -73,7 +61,6 @@
   <div class="row">
     <button type="button" id="export">Export .rot</button>
   </div>
-  <p class="source">Land: Natural Earth 1:110m. Plates and submerged crust: M&uuml;ller et al. (2019) continental polygons, grouped and simplified for this page.<span id="source-trail" hidden> Hotspot chains, dated samples and hotspot positions: after Maher et al. (2015), GJI 201, Figs 3&ndash;4 and Tables 2&ndash;3.</span></p>
 </aside>
 
 <aside class="misfit" id="misfit" hidden>
@@ -91,7 +78,37 @@
   </div>
 </aside>
 
+<aside class="key" id="key">
+  <h2>
+    <button type="button" id="key-toggle" class="fold-toggle" aria-expanded="true" aria-controls="key-body">
+      <span class="chev" aria-hidden="true">&#9662;</span> Key
+    </button>
+  </h2>
+  <div id="key-body">
+    <ul class="key-list">
+      <li id="key-age" hidden>
+        <span class="ramp" aria-hidden="true"></span>
+        <span class="ramp-ticks"><span>0</span><span id="legend-max">150</span></span>
+        <span class="key-label">Age, Ma: samples, trail discs and seafloor share it</span>
+      </li>
+      <li id="key-hotspot" hidden><span class="ring"></span> Hotspot, fixed in the mantle</li>
+      <li id="key-sample" hidden><span class="sq"></span> Dated sample</li>
+      <li id="key-trail" hidden><span class="dot"></span> Your predicted trail, every 10 Myr</li>
+      <li id="key-seafloor" hidden><span class="cells"></span> Raised seafloor along a chain</li>
+      <li id="key-mother" hidden><span class="star">&#9733;</span> Mother plate</li>
+      <li id="key-link" hidden><span class="link"></span> Moves with (plate centres)</li>
+      <li id="key-ghost"><span class="ghost"></span> Present-day outline</li>
+      <li id="key-faint" hidden class="key-note">Faint: not formed yet at the age shown.</li>
+    </ul>
+      <details class="sources"><summary>Sources</summary><p class="source">Land: Natural Earth 1:110m. Plates and submerged crust: M&uuml;ller et al. (2019) continental polygons, grouped and simplified for this page.<span id="source-trail" hidden> Hotspot chains, dated samples and hotspot positions: after Maher et al. (2015), GJI 201, Figs 3&ndash;4 and Tables 2&ndash;3.</span></p></details>
+  </div>
+</aside>
+
 <div class="timebar" id="timebar">
+  <span class="segmented" role="group" aria-label="View">
+    <button type="button" data-projection="globe" aria-pressed="true">Globe</button>
+    <button type="button" data-projection="map" aria-pressed="false">Map</button>
+  </span>
   <button type="button" id="play" class="play" aria-label="Play to present day">&#9654; Play</button>
   <!-- Old on the left, present on the right (petrify ADR-0002). The slider's value runs
        0..age left to right and is read as age = max - value, so the right arrow key

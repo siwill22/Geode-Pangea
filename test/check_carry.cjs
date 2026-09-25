@@ -68,7 +68,7 @@ async function dragPlate(page, id, dx, dy) {
     check(same(a4.axis, a5.axis, tol) && Math.abs(a5.angle - a4.angle * 200 / 150) < Math.max(tol, 1e-6) * 10,
       `${label}: Africa's pole kept, angle ${a4.angle.toFixed(3)} -> ${a5.angle.toFixed(3)} deg (x 200/150)`);
     const note = await p.textContent('#carry-note');
-    check(/yours/.test(note) && /150 Ma/.test(note), `${label}: the panel says what was carried over`);
+    check(/Fit from/.test(note) && /150 Ma/.test(note), `${label}: the panel says what was carried over`);
   }
 
   // Chapter 5, same browser: carried over by storage.
