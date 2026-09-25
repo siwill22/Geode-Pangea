@@ -2,17 +2,26 @@
   "id": "plumes",
   "title": "Plates over plumes",
   "set": "Muller2019/plumes.json",
-  "plates": ["Africa"],
+  "plates": [
+    "Africa"
+  ],
   "show": {
     "crust": false
   },
   "reconstructionAge": 150,
-  "hotspots": ["Tristan", "St Helena", "Réunion", "Canary", "Azores"],
+  "hotspots": [
+    "Tristan",
+    "St Helena",
+    "Réunion",
+    "Canary",
+    "Azores"
+  ],
+  "volcanics": true,
   "view": {
     "lon": 12,
     "lat": 0
   },
-  "intro": "Red rings are hotspots, assumed fixed in the mantle. As Africa moves over one, it leaves a trail of volcanoes that get older away from the hotspot. The squares are dated seamounts and islands. Africa starts where it is today. Drag it to where it was 150 million years ago: the dots show the trail each hotspot would then leave, and the task is to make them run through the seamounts.",
+  "intro": "Red rings are hotspots, assumed fixed in the mantle. As Africa moves over one, it leaves a trail of volcanoes that get older away from the hotspot. The squares are dated seamounts and islands, and the pale blue shapes are the volcanic ridges and islands they come from. Africa starts where it is today. Drag it to where it was 150 million years ago: the dots show the trail each hotspot would then leave, and the task is to make them run through the seamounts.",
   "questions": [
     "Can one rotation of Africa, from 150 Ma to today, fit Tristan, St Helena and Réunion at once? Where does it fail?",
     "Press Play to watch the trails being laid down. Which way was Africa moving?",

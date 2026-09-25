@@ -47,6 +47,8 @@ let showCrust = false;     // set by the chapter
 const undoStack = [];      // Map(plate -> q) of every plate, as it was before each change
 let initialQ = new Map();  // the chapter's starting rotations, for Reset
 let anchor = null;         // the anchor plate, in chapters that have one (else null)
+let volcanics = [];        // [{ ring: [vec3], age, plate }]: hotspot-trail volcanics, where shown
+const VOLCANIC_COLOUR = '#9ec3dd';
 let hotspots = [];         // [{ name, h, samples: [{ v, age, plate }] }] in chapters that show them
 
 /*
@@ -466,6 +468,34 @@ function drawHotspots() {
   }
 }
 
+/**
+ * Volcanic ridges, seamounts and islands along the trails (Johansson et al. 2018; see
+ * prep/build_hotspot_features.py), riding on their plate. Outlined at every age, and
+ * filled once formed (from the age the database gives), like the samples. A visual reference: not picked or scored.
+ */
+function drawVolcanics() {
+  ctx.fillStyle = VOLCANIC_COLOUR;
+  ctx.strokeStyle = VOLCANIC_COLOUR;
+  ctx.lineWidth = 1;
+  for (const f of volcanics) {
+    const pts = [];
+    for (const v of f.ring) {
+      const p = projector.project(rotate(f.plate.shown, v));
+      if (!p) break;
+      pts.push(p);
+    }
+    if (pts.length !== f.ring.length) continue;   // skip anything crossing the limb
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    ctx.closePath();
+    ctx.globalAlpha = f.age >= shownAge ? 0.8 : 0.2;
+    ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 /** Mean and per-hotspot distance, km, from each sample to the predicted trail at its age. */
 function misfit() {
   const R = 6371;
@@ -513,6 +543,7 @@ function draw() {
       else clipTo(p.ghostCrust, () => p.ghostLand.draw(ctx, projector));
     }
   }
+  drawVolcanics();
   for (const p of plates) drawPlate(p);
   drawHotspots();
   drawActiveRotation();
@@ -813,6 +844,18 @@ async function loadHotspots(chapter) {
   document.getElementById('legend').hidden = false;
 }
 
+/** Trail volcanics for the chapter's hotspots, on the chapter's plates. */
+async function loadVolcanics() {
+  const data = await loadJSON('data/hotspot_features.json');
+  const byMember = new Map();
+  for (const p of plates) for (const id of p.members) byMember.set(id, p);
+  const names = new Set(hotspots.map((h) => h.name));
+  volcanics = data.features.filter((f) => names.has(f.hotspot) && byMember.has(f.plate))
+    .map((f) => ({ ring: f.ring.map(([lon, lat]) => lonLatToVec3(lon, lat)), age: f.age,
+      plate: byMember.get(f.plate) }));
+  for (const id of ['legend-volcanic', 'source-volcanic']) document.getElementById(id).hidden = false;
+}
+
 /** The chapter named by ?chapter=, or the first one. */
 async function loadChapter() {
   const index = await loadJSON('data/chapters/index.json');
@@ -843,6 +886,7 @@ async function main() {
   document.getElementById('legend-max').textContent = reconAge;
   setUpAnchor(chapter);
   if (chapter.hotspots) await loadHotspots(chapter);
+  if (chapter.volcanics) await loadVolcanics();
   for (const p of plates) showPlate(p);
   resize();
   addEventListener('resize', () => { resize(); draw(); });
@@ -855,6 +899,7 @@ async function main() {
     get plates() { return plates; }, chapter, projector, view, pick, screenToSphere,
     rotationFile, draw, setShownAge, get shownAge() { return shownAge; },
     get anchor() { return anchor; }, misfit, rotationAt, hotspots: () => hotspots,
+    volcanics: () => volcanics,
     rotateByPlate: (id, v) => rotate(plates.find((p) => p.id === id).q, v),
     rotateByPlateShown: (id, v) => rotate(plates.find((p) => p.id === id).shown, v),
   };
