@@ -1,0 +1,36 @@
+{
+  "id": "satlantic",
+  "title": "Opening the South Atlantic",
+  "set": "Muller2019/shelves.json",
+  "plates": [
+    "Africa",
+    "South America"
+  ],
+  "show": {
+    "crust": true
+  },
+  "reconstructionAge": 120,
+  "fixed": [
+    701
+  ],
+  "spreading": {
+    "data": "satlantic.json",
+    "left": 201,
+    "right": 701,
+    "labels": {
+      "title": "Seafloor misfit",
+      "column": "Line",
+      "note": "Fracture zones: mean distance to your flowlines. Each isochron: the gap left between the two flanks when you bring that age back together."
+    }
+  },
+  "view": {
+    "lon": -15,
+    "lat": -15
+  },
+  "intro": "The South Atlantic is new seafloor, made at the ridge as South America and Africa pulled apart. Africa stays put; drag South America back to close the ocean 120 million years ago. As you do, the dotted flowlines show the paths your rotation predicts for the seafloor on each side, a disc every 10 Myr in the colour of its age. Fracture zones, the white lines, record the real paths. Make the flowlines run along them, and make the coloured isochrons of each age meet.",
+  "questions": [
+    "Close the ocean so that the M0 isochrons (120 Ma) on the two flanks meet. Do the fracture zones follow your flowlines?",
+    "Scrub back to 84 Ma. Do the two C34 isochrons meet too? What does that say about one steady rotation?",
+    "Why do fracture zones record the direction of spreading, but isochrons its amount?"
+  ]
+}

@@ -55,7 +55,7 @@
     <li id="key-age" hidden>
       <span class="ramp" aria-hidden="true"></span>
       <span class="ramp-ticks"><span>0</span><span id="legend-max">150</span></span>
-      <span class="key-label">Age, Ma: samples, trail discs and seafloor share it</span>
+      <span class="key-label">Age, Ma: every coloured symbol uses this scale</span>
     </li>
     <li id="key-hotspot" hidden><span class="ring"></span> Hotspot, fixed in the mantle</li>
     <li id="key-sample" hidden><span class="sq"></span> Dated sample</li>
@@ -63,6 +63,9 @@
     <li id="key-seafloor" hidden><span class="cells"></span> Raised seafloor along a chain</li>
     <li id="key-mother" hidden><span class="star">&#9733;</span> Mother plate</li>
     <li id="key-link" hidden><span class="link"></span> Moves with (plate centres)</li>
+    <li id="key-fz" hidden><span class="fz"></span> Fracture zone (observed)</li>
+    <li id="key-flow" hidden><span class="dot small"></span> Your flowline, a disc every 10 Myr</li>
+    <li id="key-iso" hidden><span class="iso"></span> Isochron: seafloor of one age, on each flank</li>
     <li id="key-ghost"><span class="ghost"></span> Present-day outline</li>
     <li id="key-faint" hidden class="key-note">Faint: not formed yet at the age shown.</li>
   </ul>
@@ -78,21 +81,21 @@
   <div class="row">
     <button type="button" id="export">Export .rot</button>
   </div>
-  <details class="sources"><summary>Sources</summary><p class="source">Land: Natural Earth 1:110m. Plates and submerged crust: M&uuml;ller et al. (2019) continental polygons, grouped and simplified for this page.<span id="source-trail" hidden> Hotspot chains, dated samples and hotspot positions: after Maher et al. (2015), GJI 201, Figs 3&ndash;4 and Tables 2&ndash;3.</span></p></details>
+  <details class="sources"><summary>Sources</summary><p class="source">Land: Natural Earth 1:110m. Plates and submerged crust: M&uuml;ller et al. (2019) continental polygons, grouped and simplified for this page.<span id="source-trail" hidden> Hotspot chains, dated samples and hotspot positions: after Maher et al. (2015), GJI 201, Figs 3&ndash;4 and Tables 2&ndash;3.</span><span id="source-spreading" hidden> Fracture zones: GSFML (Wessel et al. 2015). Isochrons: Seton et al. (2012).</span></p></details>
 </aside>
 
 <aside class="misfit" id="misfit" hidden>
   <h2>
     <button type="button" id="misfit-toggle" class="misfit-toggle" aria-expanded="true" aria-controls="misfit-body">
-      <span class="chev" aria-hidden="true">&#9662;</span> Hotspot misfit <span id="misfit-mean"></span>
+      <span class="chev" aria-hidden="true">&#9662;</span> <span id="misfit-title">Hotspot misfit</span> <span id="misfit-mean"></span>
     </button>
   </h2>
   <div id="misfit-body">
   <table class="plates">
-    <thead><tr><th>Hotspot</th><th title="Dated samples">n</th><th title="Mean distance from each sample to the predicted trail at its age">km</th></tr></thead>
+    <thead><tr><th id="misfit-col">Hotspot</th><th title="Dated samples, or lines">n</th><th title="Mean distance from each sample to the predicted trail at its age">km</th></tr></thead>
     <tbody></tbody>
   </table>
-  <p class="note">Mean distance from each dated sample to where your rotations put the trail at the sample's age.</p>
+  <p class="note" id="misfit-note">Mean distance from each dated sample to where your rotations put the trail at the sample's age.</p>
   </div>
 </aside>
 

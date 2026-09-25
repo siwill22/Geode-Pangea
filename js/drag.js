@@ -57,6 +57,8 @@ let mother = null;         // the root of the rotation tree, in chapters that bu
 let linking = false;       // "Link plates" mode: clicks make links instead of moving plates
 let pending = null;        // in that mode, the plate picked first, waiting for its parent
 let cursorOnSphere = null; // where the pointer is, for the rubber band from `pending`
+let spreading = null;      // { fzs, isochrons, seeds, left, right } in the South Atlantic chapter
+let fixedPlates = new Set(); // plates a chapter holds still (not picked)
 let trailCells = [];       // [{ v, age, colour, plate }]: dated hotspot-chain seafloor, where shown
 let trailCellDeg = 1 / 6;
 let hotspots = [];         // [{ name, h, samples: [{ v, age, plate }] }] in chapters that show them
@@ -233,6 +235,7 @@ function pick(p) {
   if (!p) return null;
   for (let k = plates.length - 1; k >= 0; k--) {
     const plate = plates[k];
+    if (fixedPlates.has(plate)) continue;
     const home = rotate(quatConjugate(plate.shown), p);
     if (!inRings(plate.crustLayer, plate.crustCaps, home)) continue;
     if (showCrust || plate.oceanic || inRings(plate.landLayer, plate.landCaps, home)) return plate;
@@ -567,6 +570,155 @@ function drawTrailCells() {
   ctx.globalAlpha = 1;
 }
 
+// ---- Seafloor spreading: flowlines, fracture zones, isochrons -------------------------
+
+/*
+ * Two plates spread about a ridge. With `right` (Africa) and `left` (South America), the
+ * relative rotation R(t) = R_right(t)^-1 R_left(t) carries South America's seafloor of age
+ * t back to where it formed against Africa. Symmetric spreading splits that in two: with
+ * H(t) = half of R(t), the seafloor formed at the seed x (a point of today's ridge) at age
+ * t lies today at H(t) x on Africa and H(t)^-1 x on South America. That is a flowline, and
+ * a fracture zone should follow it. (GPlates builds flowlines from half-stage rotations;
+ * for one steady rotation, as here, that is the same thing -- checked in
+ * prep/check_satlantic_parity.py.)
+ */
+function relativeAt(age) {
+  const { left, right } = spreading;
+  return quatMultiply(quatConjugate(rotationAt(right, age)), rotationAt(left, age));
+}
+
+/** Present-day flowline points of one seed for ages 0..reconAge (1 Myr steps), per branch. */
+function flowline(seed) {
+  const onRight = [], onLeft = [];
+  for (let tau = 0; tau <= reconAge + 1e-9; tau += 1) {
+    const h = quatSlerp(IDENTITY, relativeAt(tau), 0.5);
+    onRight.push(rotate(h, seed));
+    onLeft.push(rotate(quatConjugate(h), seed));
+  }
+  return { [spreading.right.id]: onRight, [spreading.left.id]: onLeft };
+}
+
+/** Great-circle distance, radians, from p to the polyline pts (unit vectors). */
+function distanceToPolyline(p, pts) {
+  let best = Math.PI;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    best = Math.min(best, Math.acos(Math.max(-1, Math.min(1, p[0] * a[0] + p[1] * a[1] + p[2] * a[2]))));
+    if (i === 0) continue;
+    const b = pts[i - 1];
+    // The arc a-b: its pole n; p's foot on that great circle counts if it lies between.
+    let n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const ln = Math.hypot(...n);
+    if (ln < 1e-12) continue;
+    n = n.map((x) => x / ln);
+    const pn = p[0] * n[0] + p[1] * n[1] + p[2] * n[2];
+    const f = [p[0] - pn * n[0], p[1] - pn * n[1], p[2] - pn * n[2]];
+    const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    // n = a x b, so the foot is on the arc from a to b when a x f and f x b both point along n.
+    if (dot(cross(a, f), n) >= 0 && dot(cross(f, b), n) >= 0) best = Math.min(best, Math.abs(Math.asin(Math.max(-1, Math.min(1, pn)))));
+  }
+  return best;
+}
+
+/*
+ * Only seafloor that exists at the displayed age is drawn: at age t, isochrons, fracture
+ * zones and flowlines older than t, which is to say the ocean as it was then, both flanks
+ * meeting at the ridge. At the reconstruction age the ocean is closed and almost nothing
+ * shows; Play builds it back up from the ridge. Fracture zones carry no ages, so each is
+ * clipped to where its own flowline is old enough.
+ */
+function drawSpreading() {
+  if (!spreading) return;
+  const t = shownAge;
+  for (const iso of spreading.isochrons) {
+    if (iso.age < t) continue;
+    strokeSphereLine(iso.pts.map((v) => rotate(iso.plate.shown, v)), ageColour(iso.age), 2.2);
+  }
+  // Fracture zones: the observed traces, each vertex kept if it lies on seafloor at least
+  // t old, judged by the nearest point of its flowline.
+  for (const fz of spreading.fzs) {
+    const line = spreading.flow[fz.seed][fz.plate.id];
+    const run = [];
+    const flush = () => { if (run.length > 1) strokeSphereLine(run, 'rgba(236, 242, 250, 0.9)', 1.8); run.length = 0; };
+    fz.ages.forEach((age, i) => {
+      if (age >= t) run.push(rotate(fz.plate.shown, fz.pts[i]));
+      else flush();
+    });
+    flush();
+  }
+  // Synthetic flowlines, one per seed, both branches, with an age disc every 10 Myr.
+  for (const fl of spreading.flow) {
+    for (const plate of [spreading.left, spreading.right]) {
+      const pts = fl[plate.id].map((v) => rotate(plate.shown, v)).slice(Math.ceil(t));
+      if (pts.length > 1) strokeSphereLine(pts, 'rgba(255, 255, 255, 0.35)', 1, [2, 3]);
+      for (let tau = 10; tau <= reconAge; tau += 10) {
+        if (tau < t) continue;
+        const p = projector.project(rotate(plate.shown, fl[plate.id][tau]));
+        if (!p) continue;
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], tau % 50 === 0 ? 4.5 : 3.2, 0, 2 * Math.PI);
+        ctx.fillStyle = ageColour(tau);
+        ctx.fill();
+        ctx.lineWidth = 0.8;
+        ctx.strokeStyle = MARKER_EDGE;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+/** Recompute the synthetic flowlines (after any change to the rotations). */
+function updateFlowlines() {
+  if (!spreading) return;
+  spreading.flow = spreading.seeds.map(flowline);
+  // The age of each fracture-zone vertex: that of the nearest point on its flowline.
+  for (const fz of spreading.fzs) {
+    const line = spreading.flow[fz.seed][fz.plate.id];
+    fz.ages = fz.pts.map((v) => {
+      let best = -2, age = 0;
+      line.forEach((w, tau) => { const d = v[0] * w[0] + v[1] * w[1] + v[2] * w[2]; if (d > best) { best = d; age = tau; } });
+      return age;
+    });
+  }
+}
+
+/*
+ * Two scores. Fracture zones: mean distance from each fracture-zone vertex to its own
+ * flowline branch. Isochrons, one row per chron: bring South America's isochron of age t
+ * back by R(t) against Africa and take the mean distance of its vertices to Africa's
+ * conjugate isochron -- zero when the two flanks of that age close up.
+ */
+function spreadingMisfit() {
+  updateFlowlines();
+  const R = 6371;
+  let sum = 0, n = 0;
+  for (const fz of spreading.fzs) {
+    const line = spreading.flow[fz.seed][fz.plate.id];
+    for (const v of fz.pts) { sum += distanceToPolyline(v, line) * R; n++; }
+  }
+  const rows = [{ name: 'Fracture zones', n: spreading.fzs.length, km: n ? sum / n : null }];
+  const byChron = new Map();
+  for (const iso of spreading.isochrons) {
+    if (!byChron.has(iso.chron)) byChron.set(iso.chron, { age: iso.age, [spreading.left.id]: [], [spreading.right.id]: [] });
+    byChron.get(iso.chron)[iso.plate.id].push(iso.pts);
+  }
+  for (const [chron, c] of [...byChron].sort((a, b) => a[1].age - b[1].age)) {
+    const leftLines = c[spreading.left.id], rightLines = c[spreading.right.id];
+    if (!leftLines.length || !rightLines.length) continue;
+    const r = relativeAt(c.age);
+    let s = 0, k = 0;
+    for (const line of leftLines) for (const v of line) {
+      const w = rotate(r, v);
+      s += Math.min(...rightLines.map((l) => distanceToPolyline(w, l))) * R; k++;
+    }
+    rows.push({ name: `${/^\d/.test(chron) ? 'C' : ''}${chron} (${Math.round(c.age)} Ma)`, n: k, km: s / k, age: c.age });
+  }
+  return { per: rows, mean: rows[0].km ?? 0 };
+}
+
 /** Mean and per-hotspot distance, km, from each sample to the predicted trail at its age. */
 function misfit() {
   const R = 6371;
@@ -586,9 +738,9 @@ function misfit() {
 
 function updateMisfit() {
   const box = document.getElementById('misfit');
-  if (!hotspots.length) { box.hidden = true; return; }
+  if (!hotspots.length && !spreading) { box.hidden = true; return; }
   box.hidden = false;
-  const m = misfit();
+  const m = spreading ? spreadingMisfit() : misfit();
   box.querySelector('tbody').innerHTML = m.per.map((r) =>
     `<tr><td>${r.name}</td><td>${r.n}</td><td>${r.km === null ? '&ndash;' : Math.round(r.km)}</td></tr>`).join('');
   document.getElementById('misfit-mean').textContent = `${Math.round(m.mean)} km`;
@@ -620,6 +772,7 @@ function draw() {
   }
   drawTrailCells();
   for (const p of plates) drawPlate(p);
+  drawSpreading();   // seafloor lines on top: a flank must never hide under a shelf
   drawHotspots();
   drawTree();
   drawActiveRotation();
@@ -1288,6 +1441,32 @@ async function loadHotspots(chapter) {
   }
 }
 
+/** Fracture zones, isochrons and flowline seeds between the chapter's two plates. */
+async function loadSpreading(chapter) {
+  const data = await loadJSON(`data/${chapter.spreading.data}`);
+  const byMember = new Map();
+  for (const p of plates) for (const id of p.members) byMember.set(id, p);
+  const line = (pts) => pts.map(([lon, lat]) => lonLatToVec3(lon, lat));
+  spreading = {
+    left: plates.find((p) => p.id === chapter.spreading.left),
+    right: plates.find((p) => p.id === chapter.spreading.right),
+    fzs: data.fractureZones.filter((f) => byMember.has(f.plate))
+      .map((f) => ({ plate: byMember.get(f.plate), seed: f.seed, pts: line(f.line) })),
+    // M0 is 120.4 Ma: keep an isochron within a Myr of the reconstruction age.
+    isochrons: data.isochrons.filter((i) => byMember.has(i.plate) && i.age <= reconAge + 1)
+      .map((i) => ({ plate: byMember.get(i.plate), age: i.age, chron: i.chron, pts: line(i.line) })),
+    seeds: data.seeds.map(([lon, lat]) => lonLatToVec3(lon, lat)),
+  };
+  updateFlowlines();
+  const t = chapter.spreading.labels;
+  document.getElementById('misfit-title').textContent = t.title;
+  document.getElementById('misfit-col').textContent = t.column;
+  document.getElementById('misfit-note').textContent = t.note;
+  for (const id of ['key-age', 'key-fz', 'key-flow', 'key-iso', 'source-spreading']) {
+    document.getElementById(id).hidden = false;
+  }
+}
+
 /** Hotspot-chain seafloor cells on the chapter's plates. Needs reconAge (for colours). */
 async function loadTrailCells(chapter) {
   const data = await loadJSON(`data/${chapter.trailGrids}`);
@@ -1335,6 +1514,8 @@ async function main() {
   setUpCarry(chapter);
   if (chapter.hotspots) await loadHotspots(chapter);
   if (chapter.trailGrids) await loadTrailCells(chapter);
+  fixedPlates = new Set(plates.filter((p) => (chapter.fixed || []).includes(p.id)));
+  if (chapter.spreading) await loadSpreading(chapter);
   for (const p of plates) showPlate(p);
   resize();
   addEventListener('resize', () => { resize(); draw(); });
@@ -1350,6 +1531,7 @@ async function main() {
     get plates() { return plates; }, chapter, get projector() { return projector; }, view, setProjection, pick, screenToSphere,
     rotationFile, draw, setShownAge, get shownAge() { return shownAge; },
     get mother() { return mother; }, get pending() { return pending; }, nodeOf, setParent, relativeQ, misfit, rotationAt, hotspots: () => hotspots,
+    spreading: () => spreading, spreadingMisfit,
     trailCells: () => trailCells,
     rotateByPlate: (id, v) => rotate(plates.find((p) => p.id === id).q, v),
     rotateByPlateShown: (id, v) => rotate(plates.find((p) => p.id === id).shown, v),

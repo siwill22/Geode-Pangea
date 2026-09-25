@@ -252,3 +252,6 @@ canvas.linking, canvas.linking.over-plate { cursor: crosshair; }
 .sources .source { margin-top: 0.25rem; }
 .tree .plates td { padding-top: 0.05rem; padding-bottom: 0.05rem; }
 .tree .plates select.parent { padding: 0 0.2rem; }
+.legend .fz { flex: none; width: 1.1rem; height: 2px; background: rgba(236, 242, 250, 0.9); }
+.legend .iso { flex: none; width: 1.1rem; height: 3px; background: linear-gradient(90deg, #fe9f6d, #b73779); }
+.legend .dot.small { width: 0.55rem; height: 0.55rem; }
