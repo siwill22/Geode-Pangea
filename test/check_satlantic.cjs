@@ -6,8 +6,7 @@
  *
  * Asserts: only Africa and South America load, at present day; Africa cannot be moved
  * (a drag on it turns the globe); dragging South America changes the flowlines and the
- * misfit; the two flowline branches of every seed meet at the displayed age; only
- * seafloor older than the displayed age is drawn. Writes the exported .rot, the page's
+ * misfit; the two flowline branches of every seed meet at the displayed age. Writes the exported .rot, the page's
  * flowlines (present-day positions, both branches) and its misfit rows, for pygplates.
  */
 const fs = require('fs');

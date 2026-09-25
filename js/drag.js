@@ -598,65 +598,59 @@ function flowline(seed) {
   return { [spreading.right.id]: onRight, [spreading.left.id]: onLeft };
 }
 
-/** Great-circle distance, radians, from p to the polyline pts (unit vectors). */
+/** Great-circle distance, radians, from p to the polyline pts (unit vectors). Hot: no allocation. */
 function distanceToPolyline(p, pts) {
-  let best = Math.PI;
+  const px = p[0], py = p[1], pz = p[2];
+  let bestDot = -1;          // cos of the best distance so far, for the vertices
+  let bestPerp = Math.PI;    // best perpendicular distance onto an arc interior
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i];
-    best = Math.min(best, Math.acos(Math.max(-1, Math.min(1, p[0] * a[0] + p[1] * a[1] + p[2] * a[2]))));
+    const d = px * a[0] + py * a[1] + pz * a[2];
+    if (d > bestDot) bestDot = d;
     if (i === 0) continue;
     const b = pts[i - 1];
-    // The arc a-b: its pole n; p's foot on that great circle counts if it lies between.
-    let n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-    const ln = Math.hypot(...n);
+    // The arc b -> a, its pole n = b x a; the foot of p lies on the arc when
+    // (b x p) . n >= 0 and (p x a) . n >= 0.
+    let nx = b[1] * a[2] - b[2] * a[1], ny = b[2] * a[0] - b[0] * a[2], nz = b[0] * a[1] - b[1] * a[0];
+    const ln = Math.sqrt(nx * nx + ny * ny + nz * nz);
     if (ln < 1e-12) continue;
-    n = n.map((x) => x / ln);
-    const pn = p[0] * n[0] + p[1] * n[1] + p[2] * n[2];
-    const f = [p[0] - pn * n[0], p[1] - pn * n[1], p[2] - pn * n[2]];
-    const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-    const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-    // n = a x b, so the foot is on the arc from a to b when a x f and f x b both point along n.
-    if (dot(cross(a, f), n) >= 0 && dot(cross(f, b), n) >= 0) best = Math.min(best, Math.abs(Math.asin(Math.max(-1, Math.min(1, pn)))));
+    nx /= ln; ny /= ln; nz /= ln;
+    const s1 = (b[1] * pz - b[2] * py) * nx + (b[2] * px - b[0] * pz) * ny + (b[0] * py - b[1] * px) * nz;
+    const s2 = (py * a[2] - pz * a[1]) * nx + (pz * a[0] - px * a[2]) * ny + (px * a[1] - py * a[0]) * nz;
+    if (s1 >= 0 && s2 >= 0) {
+      const perp = Math.abs(Math.asin(Math.max(-1, Math.min(1, px * nx + py * ny + pz * nz))));
+      if (perp < bestPerp) bestPerp = perp;
+    }
   }
-  return best;
+  return Math.min(Math.acos(Math.max(-1, Math.min(1, bestDot))), bestPerp);
 }
 
 /*
- * Only seafloor that exists at the displayed age is drawn: at age t, isochrons, fracture
- * zones and flowlines older than t, which is to say the ocean as it was then, both flanks
- * meeting at the ridge. At the reconstruction age the ocean is closed and almost nothing
- * shows; Play builds it back up from the ridge. Fracture zones carry no ages, so each is
- * clipped to where its own flowline is old enough.
+ * Everything is drawn at every age, riding on its plate, so the student sees what they are
+ * fitting from the start -- the same rule as the hotspot trails: full strength at the
+ * reconstruction age, where plates are edited, and what had not formed yet at the
+ * displayed age faint while playing or scrubbing. A fracture zone and its own flowline
+ * branch ride on the same plate, so whether they line up can be judged in any frame.
  */
 function drawSpreading() {
   if (!spreading) return;
-  const t = shownAge;
   for (const iso of spreading.isochrons) {
-    if (iso.age < t) continue;
+    ctx.globalAlpha = formedAlpha(iso.age, 0.2);
     strokeSphereLine(iso.pts.map((v) => rotate(iso.plate.shown, v)), ageColour(iso.age), 2.2);
   }
-  // Fracture zones: the observed traces, each vertex kept if it lies on seafloor at least
-  // t old, judged by the nearest point of its flowline.
+  ctx.globalAlpha = 1;
   for (const fz of spreading.fzs) {
-    const line = spreading.flow[fz.seed][fz.plate.id];
-    const run = [];
-    const flush = () => { if (run.length > 1) strokeSphereLine(run, 'rgba(236, 242, 250, 0.9)', 1.8); run.length = 0; };
-    fz.ages.forEach((age, i) => {
-      if (age >= t) run.push(rotate(fz.plate.shown, fz.pts[i]));
-      else flush();
-    });
-    flush();
+    strokeSphereLine(fz.pts.map((v) => rotate(fz.plate.shown, v)), 'rgba(236, 242, 250, 0.9)', 1.8);
   }
   // Synthetic flowlines, one per seed, both branches, with an age disc every 10 Myr.
   for (const fl of spreading.flow) {
     for (const plate of [spreading.left, spreading.right]) {
-      const pts = fl[plate.id].map((v) => rotate(plate.shown, v)).slice(Math.ceil(t));
-      if (pts.length > 1) strokeSphereLine(pts, 'rgba(255, 255, 255, 0.35)', 1, [2, 3]);
+      const pts = fl[plate.id].map((v) => rotate(plate.shown, v));
+      strokeSphereLine(pts, 'rgba(255, 255, 255, 0.35)', 1, [2, 3]);
       for (let tau = 10; tau <= reconAge; tau += 10) {
-        if (tau < t) continue;
-        const p = projector.project(rotate(plate.shown, fl[plate.id][tau]));
+        const p = projector.project(pts[tau]);
         if (!p) continue;
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = formedAlpha(tau, 0.35);
         ctx.beginPath();
         ctx.arc(p[0], p[1], tau % 50 === 0 ? 4.5 : 3.2, 0, 2 * Math.PI);
         ctx.fillStyle = ageColour(tau);
@@ -674,15 +668,6 @@ function drawSpreading() {
 function updateFlowlines() {
   if (!spreading) return;
   spreading.flow = spreading.seeds.map(flowline);
-  // The age of each fracture-zone vertex: that of the nearest point on its flowline.
-  for (const fz of spreading.fzs) {
-    const line = spreading.flow[fz.seed][fz.plate.id];
-    fz.ages = fz.pts.map((v) => {
-      let best = -2, age = 0;
-      line.forEach((w, tau) => { const d = v[0] * w[0] + v[1] * w[1] + v[2] * w[2]; if (d > best) { best = d; age = tau; } });
-      return age;
-    });
-  }
 }
 
 /*
@@ -736,10 +721,19 @@ function misfit() {
   return { per, mean: n ? total / n : 0 };
 }
 
+let lastMisfitAt = 0;
 function updateMisfit() {
   const box = document.getElementById('misfit');
   if (!hotspots.length && !spreading) { box.hidden = true; return; }
   box.hidden = false;
+  // During a drag the flowlines follow every move, but the seafloor misfit (tens of ms)
+  // is refreshed at most five times a second; it is recomputed in full on release.
+  if (spreading) {
+    updateFlowlines();
+    const now = performance.now();
+    if (drag && now - lastMisfitAt < 200) return;
+    lastMisfitAt = now;
+  }
   const m = spreading ? spreadingMisfit() : misfit();
   box.querySelector('tbody').innerHTML = m.per.map((r) =>
     `<tr><td>${r.name}</td><td>${r.n}</td><td>${r.km === null ? '&ndash;' : Math.round(r.km)}</td></tr>`).join('');
