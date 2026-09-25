@@ -22,6 +22,11 @@ clipped to the chain's age range. surface works on the lon-lat plane, not the sp
 over boxes this size (at most about 30 degrees, at low latitude) that distortion is small
 next to the spread of the samples, and the result only colours the page.
 
+It also writes data/hotspots_maher2015.json: the same Table 3 hotspots and Table 2 samples
+in the page's hotspot format, so the dated squares and the coloured seafloor come from one
+source. Azores, which the paper does not use, is added from the optAPM catalogue with no
+samples.
+
 Reunion follows the paper's model A inset: the Mascarene Plateau ODP and well ages on
 Africa, without the Chagos-Laccadive sample rotated from India.
 """
@@ -41,6 +46,9 @@ FILTER_KM = 700
 CUTOFF_M = 700
 CORRIDOR_KM = {'Tristan': 250, 'St Helena': 300, 'Canary': 200, 'Réunion': 200}
 R_KM = 6371.0
+# The plate each chain's cells and samples ride on (Muller 2019 ids): Reunion is on Somalia.
+PLATE = {'Réunion': 709, 'Tristan': 701, 'St Helena': 701, 'Canary': 701}
+AZORES = (-26.0, 38.0)   # optAPM HotspotCatalogue2
 
 # Maher et al. (2015) Table 3: hotspot positions used for the fit (lon, lat).
 HOTSPOTS = {'Réunion': (54.7, -21.5), 'Tristan': (-12, -38.5),
@@ -132,6 +140,7 @@ def main():
         for x, y, r, a, h in zip(lo, la, res[near], age, z[near]):
             cells.append(dict(hotspot=name, lon=round(float(x), 3), lat=round(float(y), 3),
                               residual=int(round(float(r))), age=round(float(a), 1),
+                              plate=PLATE[name],
                               land=bool(h > 0)))
         print(f'{name:9s} {near.sum():5d} cells, ages 0-{data[:, 2].max():.0f} Ma')
 
@@ -142,6 +151,16 @@ def main():
                               'each chain; ages from their Table 2',
                        cellDeg=1 / 6, cells=cells), f, separators=(',', ':'))
     print(f'wrote {os.path.relpath(path, REPO)} ({os.path.getsize(path) / 1e3:.0f} kB)')
+    hotspots = [dict(name=name, lon=HOTSPOTS[name][0], lat=HOTSPOTS[name][1],
+                     samples=[dict(lon=x, lat=y, age=a, plate=PLATE[name])
+                              for x, y, a in sorted(SAMPLES[name], key=lambda s: s[2])])
+                for name in SAMPLES]
+    hotspots.append(dict(name='Azores', lon=AZORES[0], lat=AZORES[1], samples=[]))
+    path = os.path.join(REPO, 'data', 'hotspots_maher2015.json')
+    with open(path, 'w') as f:
+        json.dump(dict(source='Maher et al. (2015) Tables 2 and 3; Azores position from optAPM',
+                       maxAge=150, hotspots=hotspots), f, ensure_ascii=False, separators=(',', ':'))
+    print('wrote', os.path.relpath(path, REPO))
     if args.figure:
         figure(residual, cells, args.figure)
 

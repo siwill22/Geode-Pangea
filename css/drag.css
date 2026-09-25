@@ -198,4 +198,3 @@ input[type=checkbox] { accent-color: var(--accent); }
 
 /* The hidden attribute wins over any display rule above (.row is a flex box). */
 [hidden] { display: none !important; }
-.legend .volcanic { display: inline-block; width: 0.6rem; height: 0.6rem; background: #9ec3dd; opacity: 0.75; }

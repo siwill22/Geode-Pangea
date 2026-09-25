@@ -6,8 +6,8 @@
  *
  * Asserts:
  * - Only Africa is shown, starting at present day (no rotation).
- * - The five chosen hotspots load: Azores with no samples but still a trail,
- *   Reunion with only its samples on Africa's blocks.
+ * - The five chosen hotspots load, with Maher et al. (2015) samples; Azores with no
+ *   samples but still a trail. The chains' seafloor cells load.
  * - Dragging Africa moves it, and the misfit responds.
  *
  * Writes the exported hierarchical .rot, vertices at the reconstruction age and at a
@@ -57,7 +57,9 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   check(Object.keys(info.hs).sort().join() === 'Azores,Canary,Réunion,St Helena,Tristan',
     `the five hotspots (${JSON.stringify(info.hs)})`);
   check(info.hs.Azores[0] === 0 && info.hs.Azores[1] === 1, 'Azores: no samples, but a trail on Africa');
-  check(info.hs['Réunion'][0] === 6, 'Réunion: only the samples on Africa (Somalia) blocks');
+  check(info.hs['Réunion'][0] === 6 && info.hs.Tristan[0] === 28, 'Maher et al. (2015) Table 2 samples');
+  const cells = await page.evaluate(() => window.__dragPlates.trailCells().length);
+  check(cells > 2000, `hotspot-chain seafloor cells loaded (${cells})`);
   const misfit0 = await page.evaluate(() => window.__dragPlates.misfit().mean);
 
   await dragFrom(await centreOnScreen(701), -60, 40);

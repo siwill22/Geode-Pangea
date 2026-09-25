@@ -16,15 +16,16 @@
     "Canary",
     "Azores"
   ],
-  "volcanics": true,
+  "hotspotData": "hotspots_maher2015.json",
+  "trailGrids": "trail_grids.json",
   "view": {
     "lon": 12,
     "lat": 0
   },
-  "intro": "Red rings are hotspots, assumed fixed in the mantle. As Africa moves over one, it leaves a trail of volcanoes that get older away from the hotspot. The squares are dated seamounts and islands, and the pale blue shapes are the volcanic ridges and islands they come from. Africa starts where it is today. Drag it to where it was 150 million years ago: the dots show the trail each hotspot would then leave, and the task is to make them run through the seamounts.",
+  "intro": "Red rings are hotspots, assumed fixed in the mantle. As Africa moves over one, it leaves a trail of volcanoes that get older away from the hotspot. The squares are dated seamounts and islands. The coloured seafloor is the raised ridges and seamounts of each chain, coloured by age interpolated between the samples. Africa starts where it is today. Drag it to where it was 150 million years ago: the dots show the trail each hotspot would then leave, and the task is to make them run along seafloor of the same colour.",
   "questions": [
     "Can one rotation of Africa, from 150 Ma to today, fit Tristan, St Helena and Réunion at once? Where does it fail?",
     "Press Play to watch the trails being laid down. Which way was Africa moving?",
-    "Canary's seamounts sit close to the hotspot whatever their age, and the Azores has no dated trail at all. What do they tell you about your rotation?"
+    "The Canary chain curves like a backwards C. Can one rotation make that shape? And the Azores has no dated trail at all: where does your rotation say it should be?"
   ]
 }
