@@ -24,6 +24,7 @@ import { Orthographic } from '../vendor/petrify/orthographic.js';
 import { tracePolyline } from '../vendor/petrify/polyline.js';
 import {
   DEG, lonLatToVec3, tangentFrame, ringSignedArea, ringContains, ringCentroid,
+  ringBoundingCap,
 } from '../vendor/petrify/sphere.js';
 import {
   quatToMat3, mat3Apply, quatMultiply, quatConjugate, quatFromAxisAngle,
@@ -48,40 +49,85 @@ const rotate = (q, v) => mat3Apply(quatToMat3(q), v);
 
 // ---- Loading ------------------------------------------------------------------------
 
-async function loadPlates() {
-  const res = await fetch('data/plates.geojson');
-  if (!res.ok) throw new Error(`data/plates.geojson: ${res.status}`);
-  const fc = await res.json();
+/**
+ * A chapter names a plate set (built by prep/build_chapters.py from a published plate
+ * model) and says what to show of it. Each plate in the set is a group of the model's
+ * blocks: `land` rings (coastlines) and `crust` rings (continental crust, much of it
+ * under the sea).
+ */
+async function loadJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.status}`);
+  return res.json();
+}
 
-  return fc.features.map((f) => {
-    const { name, plateId, colour } = f.properties;
-    let ring = f.geometry.coordinates[0];
-
+/** Pack lon/lat rings into one xyz buffer, each ring wound counter-clockwise. */
+function packRings(rings) {
+  const out = [];
+  for (const xy of rings) {
+    const n = xy.length / 2;
+    const buf = new Float64Array(n * 3);
+    for (let k = 0; k < n; k++) lonLatToVec3(xy[2 * k], xy[2 * k + 1], buf.subarray(3 * k, 3 * k + 3));
     // Interior on the left is the convention ringContains() and the fill both rely on.
-    // Every plate here is far smaller than a hemisphere, so a ring that comes out
+    // Every block here is far smaller than a hemisphere, so a ring that comes out
     // clockwise was simply digitised the other way round.
-    const buf = new Float64Array(ring.length * 3);
-    ring.forEach(([lon, lat], k) => lonLatToVec3(lon, lat, buf.subarray(k * 3, k * 3 + 3)));
-    if (ringSignedArea(buf, 0, ring.length) < 0) ring = [...ring].reverse();
+    const area = ringSignedArea(buf, 0, n);
+    if (area < 0) {
+      const rev = new Array(xy.length);
+      for (let k = 0; k < n; k++) { rev[2 * k] = xy[2 * (n - 1 - k)]; rev[2 * k + 1] = xy[2 * (n - 1 - k) + 1]; }
+      out.push({ xy: rev, area: -area });
+    } else {
+      out.push({ xy, area });
+    }
+  }
+  return out;
+}
 
-    const data = {
-      times: [0],
-      rotations: {},
-      features: [{ p: plateId, b: Infinity, e: 0, n: name, xy: ring.flat() }],
-    };
-    const layer = new PolygonLayer(data, {
-      fill: hexWithAlpha(colour, 0.82), stroke: 'rgba(7, 12, 22, 0.9)', lineWidth: 1,
+function layerFor(id, rings, options) {
+  const layer = new PolygonLayer({
+    times: [0],
+    rotations: {},
+    features: rings.map((r) => ({ p: id, b: Infinity, e: 0, xy: r.xy })),
+  }, options);
+  layer.setRotations({ [id]: IDENTITY });
+  return layer;
+}
+
+async function loadPlates(chapter) {
+  const set = await loadJSON(`data/${chapter.set}`);
+  const showCrust = !!chapter.show?.crust;
+
+  return set.groups.map((g) => {
+    const id = g.principal;
+    const land = packRings(g.land);
+    const crust = showCrust ? packRings(g.crust) : [];
+    const layers = [];
+    if (crust.length) {
+      layers.push(layerFor(id, crust, { fill: hexWithAlpha(g.colour, 0.42), stroke: null }));
+    }
+    layers.push(layerFor(id, land, { fill: hexWithAlpha(g.colour, 0.9), stroke: null }));
+    const ghost = layerFor(id, showCrust ? crust : land,
+      { outline: true, stroke: hexWithAlpha(g.colour, 0.6), lineWidth: 1 });
+
+    // What you can grab: the crust where it is shown, since that is the continent's real
+    // extent; otherwise the land. Each ring gets a bounding cap so a click far away is
+    // rejected with one dot product instead of a walk around the ring.
+    const pickLayer = layers[0];
+    const pickRings = pickLayer.rings.map((r) => ({
+      offset: r.offset, count: r.count, ...ringBoundingCap(pickLayer.home, r.offset, r.count),
+    }));
+
+    // Area-weighted centre of everything grabbable -- the axis a twist turns about.
+    const c = [0, 0, 0];
+    (crust.length ? crust : land).forEach((r, k) => {
+      const v = ringCentroid(pickLayer.home, pickLayer.rings[k].offset, pickLayer.rings[k].count);
+      c[0] += r.area * v[0]; c[1] += r.area * v[1]; c[2] += r.area * v[2];
     });
-    const ghost = new PolygonLayer(data, {
-      outline: true, stroke: hexWithAlpha(colour, 0.55), lineWidth: 1,
-    });
-    layer.setRotations({ [plateId]: IDENTITY });
-    ghost.setRotations({ [plateId]: IDENTITY });
+    const n = Math.hypot(...c);
 
     return {
-      name, id: plateId, colour, layer, ghost,
-      count: ring.length,
-      centre: ringCentroid(layer.home, 0, ring.length),
+      name: g.name, id, colour: g.colour, layers, ghost, pickLayer, pickRings,
+      centre: [c[0] / n, c[1] / n, c[2] / n],
       q: IDENTITY,
     };
   });
@@ -137,14 +183,18 @@ function pick(p) {
   for (let k = plates.length - 1; k >= 0; k--) {
     const plate = plates[k];
     const home = rotate(quatConjugate(plate.q), p);
-    if (ringContains(plate.layer.home, 0, plate.count, home)) return plate;
+    for (const r of plate.pickRings) {
+      const { centre: c } = r;
+      if (home[0] * c[0] + home[1] * c[1] + home[2] * c[2] < r.cosRadius) continue;
+      if (ringContains(plate.pickLayer.home, r.offset, r.count, home)) return plate;
+    }
   }
   return null;
 }
 
 function setPlateRotation(plate, q) {
   plate.q = q;
-  plate.layer.setRotations({ [plate.id]: q });
+  for (const layer of plate.layers) layer.setRotations({ [plate.id]: q });
 }
 
 function bringToTop(plate) {
@@ -239,7 +289,7 @@ function draw() {
 
   drawGraticule();
   if (showGhosts) for (const p of plates) if (p.q !== IDENTITY) p.ghost.draw(ctx, projector);
-  for (const p of plates) p.layer.draw(ctx, projector);
+  for (const p of plates) for (const layer of p.layers) layer.draw(ctx, projector);
   drawActiveRotation();
 }
 
@@ -277,6 +327,11 @@ function updateTable() {
  * at the chosen age, both relative to plate 000 (the fixed reference). GPlates slerps
  * between the two, so the file also describes a path from present-day to the dragged
  * arrangement, not just its endpoint.
+ *
+ * Each plate is written under its principal plate id from the model the chapter was
+ * built from (Africa is 701 in Muller et al. 2019, and so on), so the file can be used
+ * with that model's own continental polygons -- though only the principal block of each
+ * group carries that id there.
  */
 function rotationFile(age) {
   const line = (id, t, lat, lon, ang, name) => [
@@ -415,8 +470,29 @@ document.getElementById('export').addEventListener('click', () => {
 
 // ---- Start --------------------------------------------------------------------------
 
+/** The chapter named by ?chapter=, or the first one. */
+async function loadChapter() {
+  const index = await loadJSON('data/chapters/index.json');
+  const want = new URLSearchParams(location.search).get('chapter');
+  const entry = index.find((c) => c.id === want) || index[0];
+  const chapter = await loadJSON(`data/chapters/${entry.id}.json`);
+
+  const menu = document.getElementById('chapter');
+  menu.innerHTML = index.map((c) =>
+    `<option value="${c.id}"${c.id === entry.id ? ' selected' : ''}>${c.title}</option>`).join('');
+  // A new chapter is a new page: plates, rotations and undo history all start fresh.
+  menu.addEventListener('change', () => { location.search = `?chapter=${menu.value}`; });
+
+  document.getElementById('intro').textContent = chapter.intro;
+  document.getElementById('questions').innerHTML =
+    (chapter.questions || []).map((q) => `<li>${q}</li>`).join('');
+  if (chapter.exportAge != null) document.getElementById('age').value = chapter.exportAge;
+  return chapter;
+}
+
 async function main() {
-  plates = await loadPlates();
+  const chapter = await loadChapter();
+  plates = await loadPlates(chapter);
   resize();
   addEventListener('resize', () => { resize(); draw(); });
   updateTable();
@@ -424,7 +500,8 @@ async function main() {
 
   // For automated checks: the same state and functions the gestures use, nothing more.
   window.__dragPlates = {
-    get plates() { return plates; }, projector, view, pick, screenToSphere, rotationFile, draw,
+    get plates() { return plates; }, chapter, projector, view, pick, screenToSphere,
+    rotationFile, draw,
     rotateByPlate: (id, v) => rotate(plates.find((p) => p.id === id).q, v),
   };
 }

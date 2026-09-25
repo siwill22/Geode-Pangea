@@ -1,0 +1,13 @@
+{
+  "id": "shelves",
+  "title": "Beneath the waves",
+  "set": "Muller2019/six.json",
+  "show": {"crust": true},
+  "intro": "The same six continents, now with the continental crust that lies under the sea: shelves and stretched margins. It moves with the land, and it is the real edge of each continent.",
+  "questions": [
+    "Fit the continents again, edge of crust to edge of crust. Is it better than the coastline fit?",
+    "Which continents gained the most hidden crust? Where is it?",
+    "Sea level has changed through time. Why does that make the coastline a poor edge to fit?"
+  ],
+  "exportAge": 200
+}

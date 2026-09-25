@@ -2,7 +2,7 @@
  * End-to-end check with real pointer events.
  *
  *   python3 -m http.server 8765 --bind 127.0.0.1      (from the repo root)
- *   NODE_PATH=~/GIT/Geode/viewer/node_modules node test/check_drag.cjs [outDir]
+ *   CHAPTER=fit NODE_PATH=~/GIT/Geode/viewer/node_modules node test/check_drag.cjs [outDir]
  *
  * Asserts: a plate drag moves only that plate and keeps the grabbed point under the
  * cursor; an ocean drag turns the globe and moves no plate; a twist leaves the plate's
@@ -13,7 +13,8 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
-const URL = process.env.URL || 'http://127.0.0.1:8765/';
+const CHAPTER = process.env.CHAPTER || 'fit';
+const URL = (process.env.URL || 'http://127.0.0.1:8765/') + `?chapter=${CHAPTER}`;
 const out = process.argv[2] || path.join(__dirname, 'out');
 fs.mkdirSync(out, { recursive: true });
 
@@ -30,6 +31,7 @@ function check(ok, msg) {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(URL);
   await page.waitForFunction(() => window.__dragPlates?.plates.length === 6);
+  console.log(`chapter ${CHAPTER}`);
   await page.screenshot({ path: path.join(out, '0-start.png') });
 
   // Screen position of a plate's current centre, and a snapshot of every rotation.
@@ -55,7 +57,7 @@ function check(ok, msg) {
   }
 
   // 1. Drag Africa east and north.
-  const AFRICA = 901;
+  const AFRICA = 701;
   const start = await centreOnScreen(AFRICA);
   check(!!start, `Africa's centre is on screen at ${start}`);
   const grabHome = await page.evaluate(([x, y]) => {
@@ -73,7 +75,7 @@ function check(ok, msg) {
     'the globe did not turn during a plate drag');
   const slip = await page.evaluate(([g, [x, y]]) => {
     const d = window.__dragPlates;
-    const nowAt = d.rotateByPlate(901, g);
+    const nowAt = d.rotateByPlate(701, g);
     const under = d.screenToSphere(x, y);
     const dot = nowAt[0] * under[0] + nowAt[1] * under[1] + nowAt[2] * under[2];
     return Math.acos(Math.min(1, dot)) * 180 / Math.PI;
@@ -104,7 +106,7 @@ function check(ok, msg) {
   await page.screenshot({ path: path.join(out, '2-globe-turned.png') });
 
   // 3. Shift-twist Australia (or whichever plate is nearest the middle if it is hidden).
-  const AUS = 906;
+  const AUS = 801;
   let c = await centreOnScreen(AUS);
   if (!c) {
     await page.evaluate(() => {
@@ -114,21 +116,22 @@ function check(ok, msg) {
     c = await centreOnScreen(AUS);
   }
   const cBefore = await page.evaluate(() => {
-    const d = window.__dragPlates, p = d.plates.find((x) => x.id === 906);
-    return d.rotateByPlate(906, p.centre);
+    const d = window.__dragPlates, p = d.plates.find((x) => x.id === 801);
+    return d.rotateByPlate(801, p.centre);
   });
   const grab = [c[0] + 30, c[1]];
   await dragPath(grab, [c[0], c[1] - 30], { shift: true, steps: 15 });
   const twist = await page.evaluate((c0) => {
-    const d = window.__dragPlates, p = d.plates.find((x) => x.id === 906);
-    const c1 = d.rotateByPlate(906, p.centre);
+    const d = window.__dragPlates, p = d.plates.find((x) => x.id === 801);
+    const c1 = d.rotateByPlate(801, p.centre);
     const dot = c0[0] * c1[0] + c0[1] * c1[1] + c0[2] * c1[2];
     const q = p.q;
     return { drift: Math.acos(Math.min(1, dot)) * 180 / Math.PI,
       angle: 2 * Math.atan2(Math.hypot(q[0], q[1], q[2]), Math.abs(q[3])) * 180 / Math.PI };
   }, cBefore);
   check(twist.angle > 20, `Australia twisted by ${twist.angle.toFixed(1)} deg`);
-  check(twist.drift < 1e-6, `its centre did not move (${twist.drift.toExponential(1)} deg)`);
+  // acos near 1 resolves ~1.5e-8 rad (8.5e-7 deg), so this is the measurement floor.
+  check(twist.drift < 1e-5, `its centre did not move (${twist.drift.toExponential(1)} deg)`);
   await page.screenshot({ path: path.join(out, '3-australia-twisted.png') });
 
   // 4. For the pygplates parity check: the rotation file, and every plate's rotated vertices.
@@ -136,7 +139,8 @@ function check(ok, msg) {
     const d = window.__dragPlates;
     return {
       rot: d.rotationFile(100),
-      plates: d.plates.map((p) => ({ id: p.id, name: p.name, xyz: Array.from(p.layer.xyz) })),
+      plates: d.plates.map((p) => ({ id: p.id, name: p.name,
+        home: Array.from(p.pickLayer.home), xyz: Array.from(p.pickLayer.xyz) })),
     };
   });
   fs.writeFileSync(path.join(out, 'drag.rot'), dump.rot);

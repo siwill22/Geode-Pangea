@@ -13,6 +13,12 @@
 
 <aside class="panel" id="panel">
   <h1>Pangea</h1>
+  <label class="chapter-pick">
+    <span class="visually-hidden">Chapter</span>
+    <select id="chapter" aria-label="Chapter"></select>
+  </label>
+  <p class="intro" id="intro"></p>
+  <ol class="questions" id="questions"></ol>
   <p class="hint">
     Drag a continent to move it over the sphere. <kbd>Shift</kbd>-drag, or switch on
     <em>Twist</em>, to spin it about its own centre. Drag the ocean to turn the globe.
@@ -42,7 +48,7 @@
     <label class="age">Age <input type="number" id="age" value="100" min="0" step="1"> Ma</label>
     <button type="button" id="export">Export .rot</button>
   </div>
-  <p class="source">Coastlines: Natural Earth 1:110m land, split at Suez and Panama.</p>
+  <p class="source">Continents: M&uuml;ller et al. (2019) coastlines and continental polygons, grouped and simplified for this page.</p>
 </aside>
 
 <script type="module" src="js/drag.js"></script>

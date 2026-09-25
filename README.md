@@ -20,25 +20,43 @@ Plain static site with no build step: serve the folder and open `index.html`.
 python3 -m http.server 8765 --bind 127.0.0.1
 ```
 
+## Chapters
+
+Each chapter is a small file in `data/chapters/` that names a plate set and says what to
+show. Pick one from the menu, or link it directly with `?chapter=<id>`.
+
+| id | Chapter |
+|---|---|
+| `fit` | 1. Fit the continents: coastlines only |
+| `shelves` | 2. Beneath the waves: the same continents, with their submerged continental crust |
+
 ## Data
 
-`data/plates.geojson` (lon/lat, WGS84) is built by `prep/make_plates.py` from Natural
-Earth 1:110m land (public domain):
+Plate sets (`data/<model>/<set>.json`) are built from a published plate model by
+`prep/build_chapters.py`. The model is currently Müller et al. (2019): coastlines,
+continental polygons and rotations, read from the gprm cache. Each continent is a group
+of the model's blocks:
 
-- Africa is split from Eurasia at Suez, and North from South America at Panama.
-- The Caspian (a hole in the source, joined to the coast by a slit) is filled.
-- Rings are tessellated to 1° great-circle segments.
+- **Seeds:** each group starts from a few plate ids, named as the model's own
+  continental-polygon file names them (`prep/groups/<model>.json`). A seed whose name
+  doesn't match stops the build.
+- **Growth:** every other continental plate joins the group of its nearest neighbour.
+- **Dropped:** island arcs, crust the model says appeared after 100 Ma, and a named list
+  of LIPs.
+- **Simplification:** outlines are simplified on the sphere. Boundaries shared between
+  blocks are simplified identically on both sides, so no cracks open between them.
 
-Plate ids 901–906 are arbitrary and don't correspond to any real plate model.
+Each group is exported under its principal plate id from the model (Africa 701,
+Eurasia 301, …).
 
 ```sh
-conda run -n pygmt17 python prep/make_plates.py
+conda run -n pygmt17 python prep/build_chapters.py --figures out/   # --lip-report to list LIP overlaps
 ```
 
 ## Checks
 
 ```sh
-NODE_PATH=~/GIT/Geode/viewer/node_modules node test/check_drag.cjs out/
+CHAPTER=fit NODE_PATH=~/GIT/Geode/viewer/node_modules node test/check_drag.cjs out/
 conda run -n pygmt17 python prep/check_parity.py out/
 ```
 
@@ -49,13 +67,15 @@ The first runs the page in Chromium with real pointer events. It checks four thi
 - An ocean drag turns the globe and moves no plate.
 - A twist leaves the plate's centre fixed.
 
-The second reconstructs the same polygons in pygplates from the exported `.rot` file,
-compares them vertex by vertex with what the page drew, and writes an overlay figure.
-The two agree to about 5e-5° (the rounding in the `.rot` file).
+The second rotates each plate's present-day vertices in pygplates, using only the
+exported `.rot` file, compares them vertex by vertex with what the page drew, and writes
+an overlay figure.
+The two agree to about 1e-4° (the rounding in the `.rot` file).
 
 ## Vendored code
 
 `vendor/petrify/` is a copy of five modules from
 [petrify](https://github.com/siwill22/petrify) (`polygons`, `orthographic`, `sphere`,
 `rotations`, `polyline`). This viewer needs its `PolygonLayer.setRotations()`, the
-`quat*` gesture helpers and the spherical ring functions, all added in petrify v0.16.0.
+`quat*` gesture helpers and the spherical ring functions (petrify v0.16.0), plus
+`ringBoundingCap` (not yet released).

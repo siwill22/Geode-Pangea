@@ -1,0 +1,132 @@
+{
+  "model": "Muller2019",
+  "comment": "Seeds are plate ids with the NAME the model's own continental-polygon file gives them; build_chapters.py asserts each name. Every other plate id joins the group of its nearest seed (great-circle distance between polygons), if within maxDistanceKm. A hidden group absorbs its neighbours and is then left out of the set.",
+  "sets": {
+    "six": {
+      "maxDistanceKm": 800,
+      "groups": [
+        {
+          "name": "Africa",
+          "colour": "#d9a55b",
+          "principal": 701,
+          "seeds": {
+            "701": "Africa",
+            "714": "Northwest Africa",
+            "715": "Africa",
+            "709": "Somalia"
+          }
+        },
+        {
+          "name": "Eurasia",
+          "colour": "#8fb573",
+          "principal": 301,
+          "seeds": {
+            "301": "Eurasia",
+            "302": "Baltica",
+            "401": "Siberia",
+            "601": "North China",
+            "602": "South China",
+            "501": "India",
+            "503": "Arabia",
+            "304": "Iberia",
+            "307": "Adria",
+            "3071": "Apennines",
+            "3307": "Apulia",
+            "3446": "Greece",
+            "522": "Menderes",
+            "525": "Kirsehir",
+            "526": "East Pontides",
+            "43300": "Chukotka",
+            "43200": "Kolyma",
+            "43201": "Omolon",
+            "668": "West Sulawesi",
+            "566": "Southwest Sulawesi",
+            "667": "Northeast Sulawesi",
+            "678": "East Philippines",
+            "737": "Luzon",
+            "675": "Sumba"
+          }
+        },
+        {
+          "name": "North America",
+          "colour": "#c97b63",
+          "principal": 101,
+          "seeds": {
+            "101": "North America Craton",
+            "102": "Greenland"
+          }
+        },
+        {
+          "name": "South America",
+          "colour": "#b38fd1",
+          "principal": 201,
+          "seeds": {
+            "201": "South America Craton",
+            "202": "Parana",
+            "2030": "Maricaibo",
+            "2041": "Romeral"
+          }
+        },
+        {
+          "name": "Antarctica",
+          "colour": "#9ec3d6",
+          "principal": 802,
+          "seeds": {
+            "802": "East Antarctica",
+            "804": "Marie Byrd"
+          }
+        },
+        {
+          "name": "Australia",
+          "colour": "#e0c270",
+          "principal": 801,
+          "seeds": {
+            "801": "Australia",
+            "615": "Papua",
+            "698": "Central New Guinea",
+            "878": "Southern Papua",
+            "61501": "Bird's Head",
+            "684": "Timor",
+            "681": "Seram",
+            "670": "Sula-Banggai",
+            "565": "Southeast Sulawesi",
+            "567": "Obi"
+          }
+        },
+        {
+          "name": "Zealandia",
+          "hidden": true,
+          "principal": 813,
+          "seeds": {
+            "813": "Campbell Plateau",
+            "869": "Lord Howe Rise North",
+            "833": "Lord Howe Rise"
+          }
+        }
+      ],
+      "notes": [
+        "Italy, Greece and Anatolia are seeded into Eurasia: in the model they are small blocks touching both Africa (Sicily is part of plate 715) and Europe, so which one they join is a teaching choice, made here for the continent a student would expect.",
+        "Chukotka, Kolyma and Omolon are seeded into Eurasia (the model puts them on North America).",
+        "Dropped: island arcs (GPGIM_TYPE), crust the model says appeared after minAppearanceMa, and the LIPs listed in drop. The LIP list is explicit: EarthByte's LIP outlines (2012) also cover the Seychelles, Danakil and the Batavia/Gulden Draak knolls, which are continental fragments, so the overlap is reported by the build but never used to drop anything.",
+        "keep overrides the appearance-age rule for orogenic belts inside continents (Alps-Carpathians, Dinarides, Serbo-Macedonia, Romeral): the model gives them young appearance ages because they sit in deforming belts, not because the crust is new, and dropping them punches holes in Europe and the Andes.",
+        "SE Asia: the model's blocks touch in a chain from New Guinea to Luzon, so ties decide where growth sends them. Both sides are seeded explicitly: West, SW and NE Sulawesi, Sumba, the Philippines and Luzon into Eurasia; Bird's Head, Timor, Seram, Sula-Banggai, SE Sulawesi and Obi into Australia. Halmahera is left to growth. A teaching simplification, not a claim about origins."
+      ],
+      "minAppearanceMa": 100,
+      "dropTypes": [
+        "gpml:IslandArc"
+      ],
+      "drop": {
+        "514": "Kerguelen Plateau",
+        "113": "Mendeleev",
+        "111": "North Chukchi"
+      },
+      "keep": {
+        "3022": "Eastern Alps",
+        "328": "Dinaride",
+        "344": "Orogenic Belt",
+        "349": "Serbo-Macedonia",
+        "2041": "Romeral"
+      }
+    }
+  }
+}

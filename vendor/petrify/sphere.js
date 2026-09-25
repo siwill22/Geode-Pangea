@@ -217,3 +217,24 @@ function triangleSolidAngle(ox, oy, oz, ax, ay, az, bx, by, bz) {
     + (bx * ox + by * oy + bz * oz);
   return 2 * Math.atan2(triple, denom);
 }
+
+/**
+ * The smallest cap about the ring's centroid that holds every vertex, for rejecting points
+ * cheaply before a full ringContains(): { centre, cosRadius }. A point p is certainly
+ * outside the ring when dot(p, centre) < cosRadius.
+ *
+ * Sound because a cap narrower than a hemisphere is convex on the sphere: every
+ * great-circle edge between two vertices inside it stays inside it, and so does the
+ * region they enclose. A ring too wide for that gets cosRadius = -1, which rejects
+ * nothing.
+ */
+export function ringBoundingCap(buf, offset, count) {
+  const centre = ringCentroid(buf, offset, count);
+  let cosRadius = 1;
+  for (let k = 0; k < count; k++) {
+    const i = (offset + k) * 3;
+    const d = centre[0] * buf[i] + centre[1] * buf[i + 1] + centre[2] * buf[i + 2];
+    if (d < cosRadius) cosRadius = d;
+  }
+  return { centre, cosRadius: cosRadius > 0 ? cosRadius : -1 };
+}
