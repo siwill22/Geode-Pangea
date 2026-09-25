@@ -404,10 +404,26 @@ function drawActiveRotation() {
  * is at least t). The misfit is how far each sample lies from where the rotations put
  * the trail at the sample's own age.
  */
-const AGE_RAMP = ['#fde2c8', '#f8b981', '#f08c45', '#dd6424', '#b6481a'];   // young -> old
+// Magma, young (pale yellow) to old (purple), cut at 0.4 of the full map: its darker end
+// all but vanishes on the navy globe. Interpolated continuously, so every age has its own
+// shade and a trail dot can be matched against the seafloor under it.
+const AGE_RAMP = ['#fcfdbf', '#fecf92', '#fe9f6d', '#f7705c', '#de4968', '#b73779', '#8c2981'];
+const AGE_RGB = AGE_RAMP.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)));
 function ageColour(age) {
-  const x = Math.max(0, Math.min(1, age / reconAge)) * (AGE_RAMP.length - 1);
-  return AGE_RAMP[Math.round(x)];
+  const x = Math.max(0, Math.min(1, age / reconAge)) * (AGE_RGB.length - 1);
+  const i = Math.min(AGE_RGB.length - 2, Math.floor(x)), f = x - i;
+  const c = AGE_RGB[i].map((v, k) => Math.round(v + f * (AGE_RGB[i + 1][k] - v)));
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+}
+const MARKER_EDGE = 'rgba(240, 246, 252, 0.9)';
+
+/**
+ * Opacity for something that forms at `age`. At the reconstruction age, where the
+ * student drags, everything is drawn at full strength -- it is what they are matching.
+ * Only once played or scrubbed toward the present does what has not formed yet fade.
+ */
+function formedAlpha(age, faint) {
+  return shownAge >= reconAge || age >= shownAge ? 1 : faint;
 }
 
 function trailPoint(plate, tau, h, carry) {
@@ -428,32 +444,41 @@ function drawHotspots() {
       if (formed.length && future.length) future.push(formed[0]);
       strokeSphereLine(future, 'rgba(255, 255, 255, 0.22)', 1.2, [3, 4]);
       strokeSphereLine(formed, 'rgba(255, 255, 255, 0.6)', 1.5);
+      // A disc every 10 Myr in the colour of its age, bigger every 50 Myr and labelled:
+      // where Africa's rotation says the hotspot was under the plate at that age.
       for (let tau = 10; tau <= reconAge; tau += 10) {
         const p = projector.project(at(tau));
         if (!p) continue;
-        ctx.globalAlpha = tau >= shownAge ? 1 : 0.35;
+        const major = tau % 50 === 0;
+        ctx.globalAlpha = formedAlpha(tau, 0.4);
         ctx.beginPath();
-        ctx.arc(p[0], p[1], tau % 50 === 0 ? 3.5 : 2.2, 0, 2 * Math.PI);
+        ctx.arc(p[0], p[1], major ? 7.5 : 5.5, 0, 2 * Math.PI);
         ctx.fillStyle = ageColour(tau);
         ctx.fill();
+        ctx.lineWidth = major ? 1.8 : 1.2;
+        ctx.strokeStyle = MARKER_EDGE;
+        ctx.stroke();
+        if (major && tau < reconAge) {
+          ctx.font = '600 11px ui-sans-serif, system-ui, sans-serif';
+          ctx.fillStyle = '#f0f6fc';
+          ctx.fillText(`${tau}`, p[0] + 10, p[1] + 4);
+        }
         ctx.globalAlpha = 1;
       }
     }
     for (const s of hs.samples) {
       const p = projector.project(rotate(s.plate.shown, s.v));
       if (!p) continue;
+      // Squares, so a sample never reads as a trail disc; faint until it has formed.
       ctx.beginPath();
       ctx.rect(p[0] - 4, p[1] - 4, 8, 8);
-      if (s.age >= shownAge) {
-        ctx.fillStyle = ageColour(s.age);
-        ctx.fill();
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = '#0d1b2e';
-      } else {
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = ageColour(s.age);
-      }
+      ctx.globalAlpha = formedAlpha(s.age, 0.35);
+      ctx.fillStyle = ageColour(s.age);
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#0d1b2e';
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
     const p = projector.project(hs.h);
     if (!p) continue;
@@ -479,7 +504,7 @@ function drawTrailCells() {
   for (const c of trailCells) {
     const p = projector.project(rotate(c.plate.shown, c.v));
     if (!p) continue;
-    ctx.globalAlpha = c.age >= shownAge ? 0.85 : 0.18;
+    ctx.globalAlpha = 0.85 * formedAlpha(c.age, 0.2);
     ctx.fillStyle = c.colour;
     ctx.fillRect(p[0] - half, p[1] - half, 2 * half, 2 * half);
   }
