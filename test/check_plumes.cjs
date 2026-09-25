@@ -5,10 +5,10 @@
  *   conda run -n pygmt17 python prep/check_plumes_parity.py [outDir]
  *
  * Asserts:
- * - Dragging the anchor moves every plate rigidly with it.
- * - Dragging another plate moves only that plate.
- * - Changing the anchor moves nothing at the reconstruction age but does change the paths
- *   in between.
+ * - Only Africa is shown, starting at present day (no rotation).
+ * - The five chosen hotspots load: Azores with no samples but still a trail,
+ *   Reunion with only its samples on Africa's blocks.
+ * - Dragging Africa moves it, and the misfit responds.
  *
  * Writes the exported hierarchical .rot, vertices at the reconstruction age and at a
  * mid age, and the page's misfit, for the pygplates comparison.
@@ -34,16 +34,6 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
 
   const state = () => page.evaluate(() => Object.fromEntries(
     window.__dragPlates.plates.map((p) => [p.id, [...p.q]])));
-  // Rotation of each plate relative to the current anchor.
-  const relative = () => page.evaluate(() => {
-    const d = window.__dragPlates, a = d.anchor.q, ai = [-a[0], -a[1], -a[2], a[3]];
-    const mul = (x, y) => [
-      x[3] * y[0] + x[0] * y[3] + x[1] * y[2] - x[2] * y[1],
-      x[3] * y[1] - x[0] * y[2] + x[1] * y[3] + x[2] * y[0],
-      x[3] * y[2] + x[0] * y[1] - x[1] * y[0] + x[2] * y[3],
-      x[3] * y[3] - x[0] * y[0] - x[1] * y[1] - x[2] * y[2]];
-    return Object.fromEntries(d.plates.map((p) => [p.id, mul(ai, p.q)]));
-  });
   const same = (a, b) => a.every((x, i) => Math.abs(x - b[i]) < 1e-9 || Math.abs(x + b[i]) < 1e-9);
   const centreOnScreen = (id) => page.evaluate((id) => {
     const d = window.__dragPlates, p = d.plates.find((x) => x.id === id);
@@ -57,43 +47,26 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
     await page.mouse.up();
   }
 
+  const info = await page.evaluate(() => {
+    const d = window.__dragPlates;
+    return { plates: d.plates.map((p) => p.name), q: [...d.plates[0].q],
+      hs: Object.fromEntries(d.hotspots().map((h) => [h.name, [h.samples.length, h.plates.length]])) };
+  });
+  check(info.plates.join() === 'Africa', `only Africa is shown (${info.plates})`);
+  check(info.q.slice(0, 3).every((x) => Math.abs(x) < 1e-12), 'Africa starts at present day');
+  check(Object.keys(info.hs).sort().join() === 'Azores,Canary,Réunion,St Helena,Tristan',
+    `the five hotspots (${JSON.stringify(info.hs)})`);
+  check(info.hs.Azores[0] === 0 && info.hs.Azores[1] === 1, 'Azores: no samples, but a trail on Africa');
+  check(info.hs['Réunion'][0] === 6, 'Réunion: only the samples on Africa (Somalia) blocks');
   const misfit0 = await page.evaluate(() => window.__dragPlates.misfit().mean);
 
-  // 1. Drag Africa, the anchor: everything moves with it.
-  const rel0 = await relative(), q0 = await state();
   await dragFrom(await centreOnScreen(701), -60, 40);
-  const rel1 = await relative(), q1 = await state();
-  check(!same(q0[701], q1[701]), 'Africa (the anchor) moved');
-  check(Object.keys(q0).every((id) => same(rel0[id], rel1[id])),
-    'every plate kept its rotation relative to Africa');
-  check(Object.keys(q0).filter((id) => +id !== 701).every((id) => !same(q0[id], q1[id])),
-    'so every other plate moved too');
+  const q1 = await state();
+  check(!same(info.q, q1[701]), 'Africa moved');
   const misfit1 = await page.evaluate(() => window.__dragPlates.misfit().mean);
   check(misfit1 !== misfit0, `the misfit responds (${Math.round(misfit0)} -> ${Math.round(misfit1)} km)`);
-
-  // 2. Drag South America: only it moves.
-  await dragFrom(await centreOnScreen(201), 30, -20);
-  const q2 = await state();
-  check(!same(q1[201], q2[201]), 'South America moved');
-  check(Object.keys(q1).filter((id) => +id !== 201).every((id) => same(q1[id], q2[id])),
-    'nothing else did');
   await page.screenshot({ path: path.join(out, '1-dragged.png') });
-
-  // 3. Change the anchor with the real menu.
   const mid = 75;
-  const at = (age) => page.evaluate((age) => {
-    const d = window.__dragPlates; d.setShownAge(age);
-    return Object.fromEntries(d.plates.map((p) => [p.id, [...p.shown]]));
-  }, age);
-  const midAfrica = await at(mid);
-  await page.selectOption('#anchor', '901');
-  check((await page.evaluate(() => window.__dragPlates.anchor.name)) === 'Pacific', 'anchor is now the Pacific');
-  const q3 = await state();
-  check(Object.keys(q2).every((id) => same(q2[id], q3[id])), 'changing the anchor moves nothing at 150 Ma');
-  const midPacific = await at(mid);
-  check(Object.keys(midAfrica).some((id) => !same(midAfrica[id], midPacific[id])),
-    `but at ${mid} Ma the plates are elsewhere: the path depends on the hierarchy`);
-  await page.evaluate(() => window.__dragPlates.setShownAge(1e9));
 
   // 4. Dump for pygplates: the file, vertices at two ages, and the misfit.
   const dump = await page.evaluate((mid) => {

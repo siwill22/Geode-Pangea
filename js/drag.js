@@ -113,8 +113,10 @@ function layerFor(id, rings, options, begins = null) {
 async function loadPlates(chapter) {
   const set = await loadJSON(`data/${chapter.set}`);
   showCrust = !!chapter.show?.crust;
+  // A chapter can show only some of the set's plates, by name.
+  const only = chapter.plates && new Set(chapter.plates);
 
-  return set.groups.map((g) => {
+  return set.groups.filter((g) => !only || only.has(g.name)).map((g) => {
     const id = g.principal;
     const crust = packRings(g.crust);
     const land = packRings(g.land.map((i) => set.land[i]));
@@ -476,7 +478,7 @@ function misfit() {
       sum += d;
     }
     total += sum; n += hs.samples.length;
-    return { name: hs.name, n: hs.samples.length, km: sum / hs.samples.length };
+    return { name: hs.name, n: hs.samples.length, km: hs.samples.length ? sum / hs.samples.length : null };
   });
   return { per, mean: n ? total / n : 0 };
 }
@@ -487,7 +489,7 @@ function updateMisfit() {
   box.hidden = false;
   const m = misfit();
   box.querySelector('tbody').innerHTML = m.per.map((r) =>
-    `<tr><td>${r.name}</td><td>${r.n}</td><td>${Math.round(r.km)}</td></tr>`).join('');
+    `<tr><td>${r.name}</td><td>${r.n}</td><td>${r.km === null ? '&ndash;' : Math.round(r.km)}</td></tr>`).join('');
   document.getElementById('misfit-mean').textContent = `${Math.round(m.mean)} km`;
 }
 
@@ -802,9 +804,12 @@ async function loadHotspots(chapter) {
     const samples = h.samples
       .filter((s) => s.age <= reconAge && byMember.has(s.plate))
       .map((s) => ({ v: lonLatToVec3(s.lon, s.lat), age: s.age, plate: byMember.get(s.plate) }));
+    // A trail is drawn on each plate that carries samples. A hotspot with no dated samples
+    // (Azores) still gets its predicted trail when the chapter has only one plate.
+    const on = [...new Set(samples.map((s) => s.plate))];
     return { name: h.name, h: lonLatToVec3(h.lon, h.lat), samples,
-      plates: [...new Set(samples.map((s) => s.plate))] };
-  }).filter((h) => h.samples.length);
+      plates: on.length || plates.length !== 1 ? on : [plates[0]] };
+  }).filter((h) => h.plates.length);
   document.getElementById('legend').hidden = false;
 }
 

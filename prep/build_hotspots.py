@@ -16,9 +16,11 @@ Hawaii and Louisville appear in the trails file twice, from Wessel and from Doub
 et al. (2012). The Doubrovine versions are used, the same compilation as Tristan,
 Reunion and New England.
 
-Canary is left out: its samples here (0-142 Ma) cluster round the present hotspot rather
-than running away from it, and fit better with no plate motion at all (308 km mean)
-than with the model's (1404 km), so it would teach nothing about plate motion.
+Canary is kept although its samples here (0-142 Ma) cluster round the present hotspot
+rather than running away from it: they fit better with no plate motion at all (308 km
+mean) than with the model's (1404 km). Azores has a catalogue position but no dated
+samples in the trails file, so it is written with an empty sample list: the page draws
+its predicted trail and nothing to fit it to.
 
 The trail maths is checked against the plate model here too. For a sample of age a on
 plate P, the point of P that sat over the hotspot h at time a has present-day position
@@ -52,6 +54,8 @@ CHAINS = {
     'Tasmantid':      ('Tasmantid', 'Tasmantid'),
     'DoubHawaii':     ('Hawaii', 'Hawaii'),
     'DoubLouisville': ('Louisville', 'Louisville'),
+    'Canary':         ('Canary', 'Canary'),
+    'Azores':         ('Azores', 'Azores'),     # no samples in the trails file
 }
 
 
@@ -83,6 +87,10 @@ def main():
             d = pygplates.GeometryOnSphere.distance(predicted, pygplates.PointOnSphere(s['lat'], s['lon']))
             misfit.append(d * EARTH_RADIUS_KM)
         plates = sorted({s['plate'] for s in samples})
+        if not samples:
+            print(f'{label:12s}   0  (no dated samples)')
+            out.append(dict(name=label, lon=h['Long'], lat=h['Lat'], samples=[]))
+            continue
         ages = [s['age'] for s in samples]
         print(f'{label:12s} {len(samples):3d}  {min(ages):5.1f}-{max(ages):5.1f}  {str(plates):22s} '
               f'{np.mean(misfit):6.0f} / {np.max(misfit):6.0f}')

@@ -48,6 +48,8 @@ for label, age, plates in (('reconstruction age', d['recon'], d['atRecon']),
 print('misfit, page vs pygplates (km):')
 page_misfit = {r['name']: r['km'] for r in d['misfit']['per']}
 for hs in d['samples']:
+    if not hs['samples']:
+        continue   # a hotspot with no dated samples (Azores) has no misfit
     h = pygplates.PointOnSphere(*hs['h'])
     dist = []
     for s in hs['samples']:

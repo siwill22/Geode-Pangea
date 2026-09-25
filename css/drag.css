@@ -195,3 +195,6 @@ input[type=checkbox] { accent-color: var(--accent); }
 }
 .legend .sq { display: inline-block; width: 0.55rem; height: 0.55rem; background: #f08c45; }
 .legend .dot { display: inline-block; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: #f08c45; }
+
+/* The hidden attribute wins over any display rule above (.row is a flex box). */
+[hidden] { display: none !important; }

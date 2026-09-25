@@ -2,21 +2,20 @@
   "id": "plumes",
   "title": "Plates over plumes",
   "set": "Muller2019/plumes.json",
+  "plates": ["Africa"],
   "show": {
     "crust": false
   },
   "reconstructionAge": 150,
-  "anchor": 701,
-  "start": "model-relative",
-  "hotspots": true,
+  "hotspots": ["Tristan", "St Helena", "Réunion", "Canary", "Azores"],
   "view": {
-    "lon": -10,
-    "lat": -15
+    "lon": 12,
+    "lat": 0
   },
-  "intro": "Red rings are hotspots, assumed fixed in the mantle. As a plate moves over one, it leaves a trail of volcanoes that get older away from it; squares are dated samples. The plates start where the model puts them relative to Africa 150 million years ago, but Africa itself has not moved. Drag Africa, and everything moves with it, to make the predicted trails (dots) run through the samples.",
+  "intro": "Red rings are hotspots, assumed fixed in the mantle. As Africa moves over one, it leaves a trail of volcanoes that get older away from the hotspot. The squares are dated seamounts and islands. Africa starts where it is today. Drag it to where it was 150 million years ago: the dots show the trail each hotspot would then leave, and the task is to make them run through the seamounts.",
   "questions": [
-    "Can one rotation of Africa, from 150 Ma to today, fit Tristan, R\u00e9union and St Helena at once? Where does it fail?",
-    "Make another plate the anchor and press Play. The plates end in the same place, but the trails change shape. Why?",
-    "Hawaii's trail has a sharp bend. Can a single rotation of the Pacific ever make one?"
+    "Can one rotation of Africa, from 150 Ma to today, fit Tristan, St Helena and Réunion at once? Where does it fail?",
+    "Press Play to watch the trails being laid down. Which way was Africa moving?",
+    "Canary's seamounts sit close to the hotspot whatever their age, and the Azores has no dated trail at all. What do they tell you about your rotation?"
   ]
 }
