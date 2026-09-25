@@ -109,6 +109,8 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   await page.screenshot({ path: path.join(out, '1-tree.png') });
 
   // 7. Point and click, with the real Link plates toggle.
+  // Turn the globe so no plate centre used below sits under the misfit box.
+  await page.evaluate(() => { const d = window.__dragPlates; d.view.lon = 30; d.view.lat = -5; d.draw(); });
   await page.click('#linking');
   const click = async (id) => { const c = await centreOnScreen(id); await page.mouse.click(c[0], c[1]); };
   const ocean = () => page.mouse.click(1385, 985);   // off the globe: not a plate
