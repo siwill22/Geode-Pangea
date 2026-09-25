@@ -24,6 +24,10 @@
     <em>Twist</em>, to spin it about its own centre. Drag the ocean to turn the globe.
   </p>
 
+  <div class="row" id="anchor-row" hidden>
+    <label class="toggle">Anchor plate <select id="anchor" aria-label="Anchor plate"></select></label>
+  </div>
+
   <table class="plates" id="plates">
     <thead>
       <tr><th></th><th>Plate</th><th title="Euler pole latitude">Lat</th>
@@ -31,10 +35,17 @@
     </thead>
     <tbody></tbody>
   </table>
-  <p class="note">
+  <p class="note" id="table-note">
     Each row is the plate's total rotation from its present-day position &mdash; one
     Euler pole and angle, however many drags it took to get there.
   </p>
+
+  <div class="legend" id="legend" hidden>
+    <span class="ring"></span> hotspot
+    <span class="ramp" aria-hidden="true"></span> <span>0</span>&ndash;<span id="legend-max">150</span> Ma:
+    <span class="sq"></span> dated sample, <span class="dot"></span> predicted trail
+    (hollow and faint: not formed yet at the age shown)
+  </div>
 
   <div class="row">
     <label class="toggle"><input type="checkbox" id="twist"> Twist</label>
@@ -48,6 +59,15 @@
     <button type="button" id="export">Export .rot</button>
   </div>
   <p class="source">Land: Natural Earth 1:110m. Plates and submerged crust: M&uuml;ller et al. (2019) continental polygons, grouped and simplified for this page.</p>
+</aside>
+
+<aside class="misfit" id="misfit" hidden>
+  <h2>Hotspot misfit <span id="misfit-mean"></span></h2>
+  <table class="plates">
+    <thead><tr><th>Hotspot</th><th title="Dated samples">n</th><th title="Mean distance from each sample to the predicted trail at its age">km</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <p class="note">Mean distance from each dated sample to where your rotations put the trail at the sample's age.</p>
 </aside>
 
 <div class="timebar" id="timebar">

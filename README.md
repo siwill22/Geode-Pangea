@@ -35,6 +35,7 @@ show. Pick one from the menu, or link it directly with `?chapter=<id>`.
 | `fit` | 1. Fit the continents: six continents, coastlines only |
 | `blocks` | 2. More than six: plus India, Iberia, Madagascar, Greenland and Mexico |
 | `shelves` | 3. Beneath the waves: the chapter-2 plates with their submerged continental crust, plus Zealandia |
+| `plumes` | 4. Plates over plumes: an anchor plate over fixed hotspots, predicted vs dated trails, 150 Ma |
 
 ## Data
 
@@ -60,6 +61,32 @@ Eurasia 301, …).
 ```sh
 conda run -n pygmt17 python prep/build_chapters.py --figures out/   # --lip-report to list LIP overlaps
 ```
+
+## Plates over plumes
+
+Chapter 4 adds an anchor plate and fixed hotspots.
+
+- **Start:** plates begin where Müller 2019 puts them relative to Africa at 150 Ma,
+  with Africa itself unmoved.
+- **The anchor** turns about its own pole. Every other plate turns about its pole
+  relative to the anchor, which is how GPlates interpolates a rotation hierarchy.
+  Changing the anchor leaves the 150 Ma positions alone but changes every path in
+  between.
+- **Trails:** the predicted trail of hotspot *h* on plate *P* is `R_P(t) R_P(τ)⁻¹ h`,
+  drawn with dated samples from optAPM (`prep/build_hotspots.py`).
+- **Misfit:** each sample's distance to the predicted trail at its own age.
+- **The Pacific** has no continent. It is drawn from the model's static polygons, showing
+  only the seafloor that existed at the displayed age.
+
+```sh
+conda run -n pygmt17 python prep/build_hotspots.py
+NODE_PATH=~/GIT/Geode/viewer/node_modules node test/check_plumes.cjs out-plumes/
+conda run -n pygmt17 python prep/check_plumes_parity.py out-plumes/
+```
+
+The parity check loads the page's exported hierarchical `.rot` into pygplates. Vertices
+agree at 150 Ma and at 75 Ma, the latter confirming the interpolation, and every
+hotspot's misfit agrees to 0.01 km.
 
 ## Checks
 

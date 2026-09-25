@@ -44,7 +44,10 @@ let plates = [];           // in draw order: last is on top
 let active = null;         // the plate most recently touched
 let showGhosts = true;
 let showCrust = false;     // set by the chapter
-const undoStack = [];      // { plate, q } as it was before each drag
+const undoStack = [];      // Map(plate -> q) of every plate, as it was before each change
+let initialQ = new Map();  // the chapter's starting rotations, for Reset
+let anchor = null;         // the anchor plate, in chapters that have one (else null)
+let hotspots = [];         // [{ name, h, samples: [{ v, age, plate }] }] in chapters that show them
 
 /*
  * Time. Each plate's `q` is its SAVED rotation: where the student put it, at the
@@ -97,11 +100,11 @@ function packRings(rings) {
   return out;
 }
 
-function layerFor(id, rings, options) {
+function layerFor(id, rings, options, begins = null) {
   const layer = new PolygonLayer({
     times: [0],
     rotations: {},
-    features: rings.map((r) => ({ p: id, b: Infinity, e: 0, xy: r.xy })),
+    features: rings.map((r, k) => ({ p: id, b: begins ? begins[k] : Infinity, e: 0, xy: r.xy })),
   }, options);
   layer.setRotations({ [id]: IDENTITY });
   return layer;
@@ -119,7 +122,9 @@ async function loadPlates(chapter) {
     // Land is Natural Earth, shared by every plate; each plate draws it clipped to its
     // own continental crust (see drawPlate). Crust and land turn together, so the clip is
     // exactly this block's land wherever the block goes.
-    const crustLayer = layerFor(id, crust, { fill: hexWithAlpha(g.colour, 0.4), stroke: null });
+    const crustLayer = layerFor(id, crust, {
+      fill: hexWithAlpha(g.colour, g.oceanic ? 0.22 : 0.4), stroke: null,
+    }, g.crustBegin);
     const landLayer = layerFor(id, land, {
       fill: hexWithAlpha(g.colour, 0.92), stroke: 'rgba(7, 12, 22, 0.5)', lineWidth: 0.8,
     });
@@ -142,7 +147,9 @@ async function loadPlates(chapter) {
     const n = Math.hypot(...c);
 
     return {
-      name: g.name, id, colour: g.colour,
+      name: g.name, id, colour: g.colour, oceanic: !!g.oceanic,
+      members: new Set(g.members.map((m) => m[0])),
+      reference: g.reference, referenceStep: set.referenceStep,
       crustLayer, landLayer, layers: [crustLayer, landLayer],
       ghostCrust: layerFor(id, crust, ghostStyle), ghostLand: layerFor(id, land, ghostStyle),
       pickLayer: crustLayer, crustCaps: caps(crustLayer), landCaps: caps(landLayer),
@@ -198,7 +205,8 @@ function screenToSphere(clientX, clientY, clamp = false) {
  * pole inside Antarctica and plates straddling the antimeridian need no special cases.
  */
 function inRings(layer, caps, v) {
-  for (const r of caps) {
+  for (const [k, r] of caps.entries()) {
+    if (!layer.isLive(layer.rings[k], layer.currentTime)) continue;
     const { centre: c } = r;
     if (v[0] * c[0] + v[1] * c[1] + v[2] * c[2] < r.cosRadius) continue;
     if (ringContains(layer.home, r.offset, r.count, v)) return true;
@@ -212,7 +220,7 @@ function pick(p) {
     const plate = plates[k];
     const home = rotate(quatConjugate(plate.shown), p);
     if (!inRings(plate.crustLayer, plate.crustCaps, home)) continue;
-    if (showCrust || inRings(plate.landLayer, plate.landCaps, home)) return plate;
+    if (showCrust || plate.oceanic || inRings(plate.landLayer, plate.landCaps, home)) return plate;
   }
   return null;
 }
@@ -222,16 +230,44 @@ function setPlateRotation(plate, q) {
   showPlate(plate);
 }
 
-/** The rotation to draw a plate with at the displayed age. */
-function shownRotation(q) {
-  if (shownAge >= reconAge) return q;
-  if (shownAge <= 0) return IDENTITY;
-  return quatSlerp(IDENTITY, q, shownAge / reconAge);
+/*
+ * A plate's rotation at any age between present day and the reconstruction age.
+ *
+ * With no anchor, each plate turns about its own saved pole: a slerp from the identity to
+ * its saved rotation q. With an anchor A, the anchor does that, and every other plate
+ * turns about its pole RELATIVE to A (r = qA^-1 q) while being carried along by A:
+ *
+ *     R_A(t) = slerp(I, qA, f)          R_P(t) = R_A(t) * slerp(I, qA^-1 qP, f)
+ *
+ * with f = age / reconAge. That is how GPlates interpolates a rotation hierarchy (each
+ * line of the file separately, then composed), so what plays here is what the exported
+ * file describes. At the reconstruction age every plate is at q whatever the anchor; in
+ * between, the anchor changes the path -- and so the shape of every hotspot trail.
+ */
+function rotationAt(plate, age) {
+  if (age >= reconAge) return plate.q;
+  if (age <= 0) return IDENTITY;
+  const f = age / reconAge;
+  if (!anchor) return quatSlerp(IDENTITY, plate.q, f);
+  const carry = quatSlerp(IDENTITY, anchor.q, f);
+  if (plate === anchor) return carry;
+  return quatMultiply(carry, quatSlerp(IDENTITY, quatMultiply(quatConjugate(anchor.q), plate.q), f));
 }
 
 function showPlate(plate) {
-  plate.shown = shownRotation(plate.q);
-  for (const layer of plate.layers) layer.setRotations({ [plate.id]: plate.shown });
+  plate.shown = rotationAt(plate, shownAge);
+  // The displayed age also decides which rings exist: an oceanic plate shows only the
+  // seafloor that had formed by then.
+  for (const layer of plate.layers) layer.setRotations({ [plate.id]: plate.shown }, shownAge);
+}
+
+/** Every plate's saved rotation, for undo. */
+function snapshot() {
+  return new Map(plates.map((p) => [p, p.q]));
+}
+
+function restore(snap) {
+  for (const [p, q] of snap) { p.q = q; showPlate(p); }
 }
 
 function setShownAge(age) {
@@ -325,22 +361,21 @@ function drawGraticule() {
 }
 
 /**
- * The active plate's finite rotation, drawn: its Euler pole, and the small circle about
- * that pole which the plate's centre travels along from present-day to where it is now.
+ * The active plate's motion, drawn: the path its centre takes from present day to the
+ * reconstruction age, and the pole of its saved rotation. With no anchor the path is a
+ * small circle about that pole; with one, it is whatever the hierarchy makes it.
  */
 function drawActiveRotation() {
   if (!active) return;
   const { lon, lat, angle } = quatToPoleAngle(active.q);
   if (angle < 1e-6) return;
 
-  const pole = lonLatToVec3(lon, lat);
   const path = [];
-  const steps = Math.max(2, Math.ceil(angle / 1));
-  for (let i = 0; i <= steps; i++) {
-    path.push(rotate(quatFromAxisAngle(pole, (angle * DEG * i) / steps), active.centre));
-  }
+  const steps = Math.max(2, Math.ceil(reconAge / 2));
+  for (let i = 0; i <= steps; i++) path.push(rotate(rotationAt(active, (reconAge * i) / steps), active.centre));
   strokeSphereLine(path, 'rgba(255, 255, 255, 0.75)', 1.5, [4, 4]);
 
+  const pole = lonLatToVec3(lon, lat);
   for (const [v, filled] of [[pole, true], [pole.map((x) => -x), false]]) {
     const p = projector.project(v);
     if (!p) continue;
@@ -352,6 +387,108 @@ function drawActiveRotation() {
     if (filled) ctx.fill();
     ctx.stroke();
   }
+}
+
+// ---- Hotspots -----------------------------------------------------------------------
+
+/*
+ * Hotspots are fixed in the frame the globe is drawn in -- that is the assumption this
+ * chapter tests. The point of plate P that sat over hotspot h at age tau has present-day
+ * position R_P(tau)^-1 h; at the displayed age t it is carried to R_P(t) R_P(tau)^-1 h.
+ * Sweeping tau from t back to the reconstruction age draws the trail P would have left.
+ * A dated sample on P is drawn where P has carried it, and only once it exists (its age
+ * is at least t). The misfit is how far each sample lies from where the rotations put
+ * the trail at the sample's own age.
+ */
+const AGE_RAMP = ['#fde2c8', '#f8b981', '#f08c45', '#dd6424', '#b6481a'];   // young -> old
+function ageColour(age) {
+  const x = Math.max(0, Math.min(1, age / reconAge)) * (AGE_RAMP.length - 1);
+  return AGE_RAMP[Math.round(x)];
+}
+
+function trailPoint(plate, tau, h, carry) {
+  return rotate(carry, rotate(quatConjugate(rotationAt(plate, tau)), h));
+}
+
+function drawHotspots() {
+  // The whole predicted trail and every sample are drawn at every age: they ride rigidly
+  // on their plate, so the fit can be judged (and edited) at the reconstruction age. The
+  // part that has not formed yet by the displayed age is drawn faint, and those samples
+  // hollow; Play shows the trail being laid down.
+  for (const hs of hotspots) {
+    for (const plate of hs.plates) {
+      const carry = plate.shown;
+      const at = (tau) => trailPoint(plate, tau, hs.h, carry);
+      const formed = [], future = [];
+      for (let tau = 0; tau <= reconAge + 1e-9; tau += 1) (tau >= shownAge ? formed : future).push(at(tau));
+      if (formed.length && future.length) future.push(formed[0]);
+      strokeSphereLine(future, 'rgba(255, 255, 255, 0.22)', 1.2, [3, 4]);
+      strokeSphereLine(formed, 'rgba(255, 255, 255, 0.6)', 1.5);
+      for (let tau = 10; tau <= reconAge; tau += 10) {
+        const p = projector.project(at(tau));
+        if (!p) continue;
+        ctx.globalAlpha = tau >= shownAge ? 1 : 0.35;
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], tau % 50 === 0 ? 3.5 : 2.2, 0, 2 * Math.PI);
+        ctx.fillStyle = ageColour(tau);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+    for (const s of hs.samples) {
+      const p = projector.project(rotate(s.plate.shown, s.v));
+      if (!p) continue;
+      ctx.beginPath();
+      ctx.rect(p[0] - 4, p[1] - 4, 8, 8);
+      if (s.age >= shownAge) {
+        ctx.fillStyle = ageColour(s.age);
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#0d1b2e';
+      } else {
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = ageColour(s.age);
+      }
+      ctx.stroke();
+    }
+    const p = projector.project(hs.h);
+    if (!p) continue;
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 7, 0, 2 * Math.PI);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#ff5a5a';
+    ctx.stroke();
+    ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillStyle = '#e8f0f8';
+    ctx.fillText(hs.name, p[0] + 10, p[1] - 8);
+  }
+}
+
+/** Mean and per-hotspot distance, km, from each sample to the predicted trail at its age. */
+function misfit() {
+  const R = 6371;
+  let total = 0, n = 0;
+  const per = hotspots.map((hs) => {
+    let sum = 0;
+    for (const s of hs.samples) {
+      const pred = rotate(quatConjugate(rotationAt(s.plate, s.age)), hs.h);
+      const d = Math.acos(Math.max(-1, Math.min(1, pred[0] * s.v[0] + pred[1] * s.v[1] + pred[2] * s.v[2]))) * R;
+      sum += d;
+    }
+    total += sum; n += hs.samples.length;
+    return { name: hs.name, n: hs.samples.length, km: sum / hs.samples.length };
+  });
+  return { per, mean: n ? total / n : 0 };
+}
+
+function updateMisfit() {
+  const box = document.getElementById('misfit');
+  if (!hotspots.length) { box.hidden = true; return; }
+  box.hidden = false;
+  const m = misfit();
+  box.querySelector('tbody').innerHTML = m.per.map((r) =>
+    `<tr><td>${r.name}</td><td>${r.n}</td><td>${Math.round(r.km)}</td></tr>`).join('');
+  document.getElementById('misfit-mean').textContent = `${Math.round(m.mean)} km`;
 }
 
 function draw() {
@@ -369,18 +506,19 @@ function draw() {
   drawGraticule();
   if (showGhosts) {
     for (const p of plates) {
-      if (p.q === IDENTITY) continue;
-      if (showCrust) p.ghostCrust.draw(ctx, projector);
+      if (p.q === (initialQ.get(p) ?? IDENTITY)) continue;
+      if (showCrust || p.oceanic) p.ghostCrust.draw(ctx, projector);
       else clipTo(p.ghostCrust, () => p.ghostLand.draw(ctx, projector));
     }
   }
   for (const p of plates) drawPlate(p);
+  drawHotspots();
   drawActiveRotation();
 }
 
 /** Draw a plate: its crust (in chapters that show it), then its land, clipped to its crust. */
 function drawPlate(p) {
-  if (showCrust) p.crustLayer.draw(ctx, projector);
+  if (showCrust || p.oceanic) p.crustLayer.draw(ctx, projector);
   clipTo(p.crustLayer, () => p.landLayer.draw(ctx, projector));
 }
 
@@ -411,18 +549,25 @@ const fmt = (x, d = 1) => (Math.abs(x) < 0.05 ? 0 : x).toFixed(d);
 
 function updateTable() {
   const rows = [...plates].sort((a, b) => a.id - b.id).map((p) => {
-    const r = quatToPoleAngle(p.q);
+    // With an anchor, each plate's own rotation is relative to it; the anchor's is absolute.
+    const r = quatToPoleAngle(anchor && p !== anchor ? quatMultiply(quatConjugate(anchor.q), p.q) : p.q);
     const moved = r.angle > 1e-6;
     const cls = [p === active ? 'active' : '', moved ? 'moved' : ''].join(' ').trim();
     return `<tr class="${cls}">`
       + `<td><span class="swatch" style="background:${p.colour}"></span></td>`
-      + `<td>${p.name}</td>`
+      + `<td>${p.name}${p === anchor ? ' <span class="tag">anchor</span>' : ''}</td>`
       + `<td>${moved ? fmt(r.lat) : '&ndash;'}</td>`
       + `<td>${moved ? fmt(r.lon) : '&ndash;'}</td>`
       + `<td>${fmt(r.angle)}&deg;</td></tr>`;
   });
   document.querySelector('#plates tbody').innerHTML = rows.join('');
   document.getElementById('undo').disabled = undoStack.length === 0;
+  if (anchor) {
+    document.getElementById('table-note').textContent =
+      `${anchor.name}'s row is its rotation over the hotspots, from ${reconAge} Ma to today; every `
+      + `other row is that plate's rotation relative to ${anchor.name}.`;
+  }
+  updateMisfit();
 }
 
 // ---- Export -------------------------------------------------------------------------
@@ -439,15 +584,20 @@ function updateTable() {
  * group carries that id there.
  */
 function rotationFile(age = reconAge) {
-  const line = (id, t, lat, lon, ang, name) => [
+  const line = (id, t, lat, lon, ang, fixed, name) => [
     String(id).padStart(3, '0'), t.toFixed(1).padStart(7), lat.toFixed(4).padStart(9),
-    lon.toFixed(4).padStart(10), ang.toFixed(4).padStart(10), '000', `! ${name}`,
+    lon.toFixed(4).padStart(10), ang.toFixed(4).padStart(10), String(fixed).padStart(3, '0'),
+    `! ${name}`,
   ].join(' ');
   const out = [];
-  for (const p of [...plates].sort((a, b) => a.id - b.id)) {
-    const r = quatToPoleAngle(p.q);
-    out.push(line(p.id, 0, 90, 0, 0, p.name));
-    out.push(line(p.id, age, r.lat, r.lon, r.angle, `${p.name} (Pangea)`));
+  // With an anchor the file is a hierarchy: the anchor relative to 000, every other plate
+  // relative to the anchor -- the same lines rotationAt() interpolates.
+  const ordered = [...plates].sort((a, b) => (b === anchor) - (a === anchor) || a.id - b.id);
+  for (const p of ordered) {
+    const fixed = anchor && p !== anchor ? anchor.id : 0;
+    const r = quatToPoleAngle(fixed ? quatMultiply(quatConjugate(anchor.q), p.q) : p.q);
+    out.push(line(p.id, 0, 90, 0, 0, fixed, p.name));
+    out.push(line(p.id, age, r.lat, r.lon, r.angle, fixed, `${p.name} (Pangea)`));
   }
   return out.join('\n') + '\n';
 }
@@ -471,10 +621,14 @@ function download(text, filename) {
  */
 let drag = null;
 
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
 canvas.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
+  if (e.button !== 0 && e.button !== 2) return;
   const p = screenToSphere(e.clientX, e.clientY);
-  const plate = pick(p);
+  // Right-drag or Alt-drag always turns the globe: an oceanic plate like the Pacific
+  // covers so much of it that there may be little open ocean left to grab.
+  const plate = e.button === 2 || e.altKey ? null : pick(p);
   if (plate && shownAge !== reconAge) {
     // Plates are edited at the reconstruction age only: that is what the saved
     // rotations mean. Grabbing one while scrubbed or playing returns there first, and the
@@ -487,11 +641,15 @@ canvas.addEventListener('pointerdown', (e) => {
   if (grabbed) {
     const plate = grabbed;
     const twist = e.shiftKey || document.getElementById('twist').checked;
-    undoStack.push({ plate, q: plate.q });
+    undoStack.push(snapshot());
     active = plate;
     bringToTop(plate);
     drag = {
       mode: twist ? 'twist' : 'move', plate, grab: p, q0: plate.q,
+      // Dragging the anchor moves everything with it: every other plate keeps its
+      // rotation relative to the anchor, as it was when the drag began.
+      rel: plate === anchor ? new Map(plates.filter((x) => x !== anchor)
+        .map((x) => [x, quatMultiply(quatConjugate(anchor.q), x.q)])) : null,
       // For a twist, the axis is the plate's centre where it is NOW, not at present day.
       axis: rotate(plate.q, plate.centre),
     };
@@ -538,6 +696,7 @@ canvas.addEventListener('pointermove', (e) => {
     delta = quatFromAxisAngle(c, Math.atan2(sin, cos));
   }
   setPlateRotation(drag.plate, quatMultiply(delta, drag.q0));
+  if (drag.rel) for (const [x, r] of drag.rel) setPlateRotation(x, quatMultiply(anchor.q, r));
   updateTable();
   requestDraw();
 });
@@ -546,6 +705,7 @@ function endDrag(e) {
   if (!drag) return;
   // A click that did not move the plate is not worth an undo step.
   if (drag.plate && drag.plate.q === drag.q0) undoStack.pop();
+  if (drag.plate) updateMisfit();
   drag = null;
   canvas.classList.remove('dragging');
   canvas.releasePointerCapture?.(e.pointerId);
@@ -559,16 +719,24 @@ canvas.addEventListener('pointercancel', endDrag);
 document.getElementById('undo').addEventListener('click', () => {
   const last = undoStack.pop();
   if (!last) return;
-  setPlateRotation(last.plate, last.q);
-  active = last.plate;
+  restore(last);
   updateTable();
   requestDraw();
 });
 
 document.getElementById('reset').addEventListener('click', () => {
-  for (const p of plates) if (p.q !== IDENTITY) undoStack.push({ plate: p, q: p.q });
-  for (const p of plates) setPlateRotation(p, IDENTITY);
+  undoStack.push(snapshot());
+  restore(new Map(plates.map((p) => [p, initialQ.get(p) ?? IDENTITY])));
   active = null;
+  updateTable();
+  requestDraw();
+});
+
+document.getElementById('anchor').addEventListener('change', (e) => {
+  // Saved rotations stay as they are, so nothing moves at the reconstruction age; what
+  // changes is how every plate travels in between.
+  anchor = plates.find((p) => p.id === Number(e.target.value));
+  for (const p of plates) showPlate(p);
   updateTable();
   requestDraw();
 });
@@ -594,6 +762,51 @@ document.getElementById('export').addEventListener('click', () => {
 });
 
 // ---- Start --------------------------------------------------------------------------
+
+/** The model's own rotation of a plate at `age`, relative to plate 000, as a quaternion. */
+function referenceAt(plate, age) {
+  const [lat, lon, angle] = plate.reference[Math.round(age / plate.referenceStep)];
+  return quatFromAxisAngle(lonLatToVec3(lon, lat), angle * DEG);
+}
+
+/**
+ * The anchor, and where plates start. A chapter with `start: "model-relative"` begins with
+ * every plate where the model puts it relative to the anchor at the reconstruction age,
+ * and the anchor itself unmoved -- so the student's job is the anchor's motion over the
+ * hotspots, with the relative fit given.
+ */
+function setUpAnchor(chapter) {
+  const box = document.getElementById('anchor-row');
+  if (!chapter.anchor) { box.hidden = true; return; }
+  box.hidden = false;
+  anchor = plates.find((p) => p.id === chapter.anchor);
+  const menu = document.getElementById('anchor');
+  menu.innerHTML = [...plates].sort((a, b) => a.name.localeCompare(b.name)).map((p) =>
+    `<option value="${p.id}"${p === anchor ? ' selected' : ''}>${p.name}</option>`).join('');
+  if (chapter.start === 'model-relative') {
+    const qa = referenceAt(anchor, reconAge);
+    for (const p of plates) {
+      p.q = p === anchor ? IDENTITY : quatMultiply(quatConjugate(qa), referenceAt(p, reconAge));
+      initialQ.set(p, p.q);
+    }
+  }
+}
+
+/** Hotspots and their dated samples, each sample on the plate whose blocks include it. */
+async function loadHotspots(chapter) {
+  const data = await loadJSON('data/hotspots.json');
+  const byMember = new Map();
+  for (const p of plates) for (const id of p.members) byMember.set(id, p);
+  const wanted = chapter.hotspots === true ? null : new Set(chapter.hotspots);
+  hotspots = data.hotspots.filter((h) => !wanted || wanted.has(h.name)).map((h) => {
+    const samples = h.samples
+      .filter((s) => s.age <= reconAge && byMember.has(s.plate))
+      .map((s) => ({ v: lonLatToVec3(s.lon, s.lat), age: s.age, plate: byMember.get(s.plate) }));
+    return { name: h.name, h: lonLatToVec3(h.lon, h.lat), samples,
+      plates: [...new Set(samples.map((s) => s.plate))] };
+  }).filter((h) => h.samples.length);
+  document.getElementById('legend').hidden = false;
+}
 
 /** The chapter named by ?chapter=, or the first one. */
 async function loadChapter() {
@@ -621,7 +834,11 @@ async function main() {
   // plate it only labels the time bar and the exported file, so it is not a control.
   reconAge = chapter.reconstructionAge ?? 200;
   shownAge = reconAge;
-  for (const p of plates) p.shown = p.q;
+  if (chapter.view) Object.assign(view, chapter.view);
+  document.getElementById('legend-max').textContent = reconAge;
+  setUpAnchor(chapter);
+  if (chapter.hotspots) await loadHotspots(chapter);
+  for (const p of plates) showPlate(p);
   resize();
   addEventListener('resize', () => { resize(); draw(); });
   updateTable();
@@ -632,6 +849,7 @@ async function main() {
   window.__dragPlates = {
     get plates() { return plates; }, chapter, projector, view, pick, screenToSphere,
     rotationFile, draw, setShownAge, get shownAge() { return shownAge; },
+    get anchor() { return anchor; }, misfit, rotationAt, hotspots: () => hotspots,
     rotateByPlate: (id, v) => rotate(plates.find((p) => p.id === id).q, v),
     rotateByPlateShown: (id, v) => rotate(plates.find((p) => p.id === id).shown, v),
   };

@@ -1,0 +1,22 @@
+{
+  "id": "plumes",
+  "title": "Plates over plumes",
+  "set": "Muller2019/plumes.json",
+  "show": {
+    "crust": false
+  },
+  "reconstructionAge": 150,
+  "anchor": 701,
+  "start": "model-relative",
+  "hotspots": true,
+  "view": {
+    "lon": -10,
+    "lat": -15
+  },
+  "intro": "Red rings are hotspots, assumed fixed in the mantle. As a plate moves over one, it leaves a trail of volcanoes that get older away from it; squares are dated samples. The plates start where the model puts them relative to Africa 150 million years ago, but Africa itself has not moved. Drag Africa, and everything moves with it, to make the predicted trails (dots) run through the samples.",
+  "questions": [
+    "Can one rotation of Africa, from 150 Ma to today, fit Tristan, R\u00e9union and St Helena at once? Where does it fail?",
+    "Make another plate the anchor and press Play. The plates end in the same place, but the trails change shape. Why?",
+    "Hawaii's trail has a sharp bend. Can a single rotation of the Pacific ever make one?"
+  ]
+}

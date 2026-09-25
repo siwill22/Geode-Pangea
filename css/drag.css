@@ -150,3 +150,48 @@ input[type=checkbox] { accent-color: var(--accent); }
   font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
 }
+
+.tag {
+  font-size: 0.68rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--muted);
+}
+.toggle select {
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.15rem 0.3rem;
+}
+.misfit {
+  position: absolute;
+  z-index: 2;
+  right: 1rem;
+  top: 1rem;
+  width: 15rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+}
+.misfit[hidden] { display: none; }
+.misfit h2 { margin: 0 0 0.3rem; font-size: 0.85rem; font-weight: 600; }
+.misfit h2 span { color: var(--accent); font-variant-numeric: tabular-nums; }
+.misfit td:first-child, .misfit th:first-child { text-align: left; }
+.misfit td { color: var(--ink) !important; }
+.legend { font-size: 0.75rem; color: var(--muted); margin: 0.2rem 0 0.4rem; line-height: 1.8; }
+.legend .ring {
+  display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%;
+  border: 2px solid #ff5a5a; vertical-align: -0.1rem;
+}
+.legend .ramp {
+  display: inline-block; width: 3.5rem; height: 0.55rem; border-radius: 2px; vertical-align: 0;
+  background: linear-gradient(90deg, #fde2c8, #f8b981, #f08c45, #dd6424, #b6481a);
+}
+.legend .sq { display: inline-block; width: 0.55rem; height: 0.55rem; background: #f08c45; }
+.legend .dot { display: inline-block; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: #f08c45; }

@@ -46,6 +46,8 @@ MODELS = {
         root='~/Library/Caches/gprm/Muller2019/Muller_etal_2019_PlateMotionModel_v2.0_Tectonics',
         crust='StaticGeometries/ContinentalPolygons/'
               'Global_EarthByte_GPlates_PresentDay_ContinentalPolygons_2019_v1.shp',
+        static='StaticGeometries/StaticPolygons/'
+               'Global_EarthByte_GPlates_PresentDay_StaticPlatePolygons_2019_v2.shp',
         rotations='*.rot',
         max_age=250,
     ),
@@ -379,7 +381,7 @@ def reference_rotations(rotation_model, pid, max_age):
 
 # ---- Build ---------------------------------------------------------------------------
 
-def build_set(model_name, set_name, spec, model, land, crust, names, rotation_model):
+def build_set(model_name, set_name, spec, model, land, crust, names, rotation_model, static_all):
     """`land` is the global list of simplified Natural Earth rings (lat/lon arrays)."""
     groups = spec['groups']
     # Only plates the model itself calls continental -- ones with continental polygons --
@@ -408,18 +410,40 @@ def build_set(model_name, set_name, spec, model, land, crust, names, rotation_mo
     crust = [c for c in crust if kept(c[0], c[3], c[4])]
     for pid, _, ll, *_ in crust:
         polys_by_id[pid].append(ll)
-    group_of, dist = assign(groups, polys_by_id, names, spec['maxDistanceKm'])
+    # Oceanic plates (the Pacific) have no continental crust to grow from: their rings come
+    # straight from the model's static polygons for the listed plate ids, and they take no
+    # part in the growth. A group like this is flagged `oceanic` for the page, which draws
+    # and picks it by its plate outline rather than by land.
+    continental = [g for g in groups if 'static' not in g]
+    group_index = {id(g): i for i, g in enumerate(groups)}
+    cgroup_of, dist = assign(continental, polys_by_id, names, spec['maxDistanceKm'])
+    group_of = {pid: (group_index[id(continental[gi])] if gi is not None else None)
+                for pid, gi in cgroup_of.items()}
+    static_polys = []
+    for gi, g in enumerate(groups):
+        if 'static' not in g:
+            continue
+        for sid, expect in g['static'].items():
+            sid = int(sid)
+            polys = [c for c in static_all if c[0] == sid]
+            got = {c[1] for c in polys}
+            if not any(expect.lower() in (n or '').lower() for n in got):
+                raise SystemExit(f'static {sid}: expected {expect!r}, the static polygons say {got}')
+            static_polys += polys
+            group_of[sid] = gi
+            dist[sid] = 0.0
 
     out_groups = [dict(name=g['name'], colour=g.get('colour'), principal=g['principal'],
-                       hidden=bool(g.get('hidden')), members=[], land=[], crust=[])
+                       hidden=bool(g.get('hidden')), oceanic='static' in g,
+                       members=[], land=[], crust=[])
                   for g in groups]
     crust_xyz = [[] for _ in groups]      # simplified crust rings as unit vectors, per group
     stats = collections.Counter()
     before_area = [collections.Counter() for _ in groups]
     after_area = [collections.Counter() for _ in groups]
-    for kind, polys in (('crust', crust),):
-        todo = []                       # (group index, plate id, name, cleaned ring, area)
-        for pid, name, ll, *_ in polys:
+    for kind, polys in (('crust', crust + static_polys),):
+        todo = []                       # (group index, plate id, name, cleaned ring, area, appear)
+        for pid, name, ll, _, appear in polys:
             gi = group_of.get(pid)
             if gi is None:
                 stats[f'{kind} left out'] += 1
@@ -431,10 +455,10 @@ def build_set(model_name, set_name, spec, model, land, crust, names, rotation_mo
             if area < MIN_AREA_KM2[kind]:
                 stats[f'{kind} too small'] += 1
                 continue
-            todo.append((gi, pid, name, ring, area))
+            todo.append((gi, pid, name, ring, area, appear))
 
         shared = simplify_rings_shared([t[3] for t in todo], TOLERANCE_DEG[kind])
-        for (gi, pid, name, ring, area), simple in zip(todo, shared):
+        for (gi, pid, name, ring, area, appear), simple in zip(todo, shared):
             if simple is None:
                 # A ring touching no other: small islands need a finer tolerance than
                 # continents to keep their shape, so halve it until the area holds.
@@ -457,6 +481,13 @@ def build_set(model_name, set_name, spec, model, land, crust, names, rotation_mo
             stats[f'{kind} vertices after'] += len(simple)
             out_groups[gi][kind].append(
                 [round(float(v), 3) for lat, lon in simple for v in (lon, lat)])
+            # When this piece of an oceanic plate formed (its static polygon's appearance
+            # age), so the page can show only the seafloor that existed at the displayed
+            # age. Continental blocks are taken as always there: their appearance ages are
+            # the model's mechanics (the Alps at 20 Ma), not new crust.
+            if out_groups[gi]['oceanic']:
+                out_groups[gi].setdefault('crustBegin', []).append(
+                    round(float(appear), 1) if np.isfinite(appear) else 1e9)
             crust_xyz[gi].append(to_xyz(simple))
 
     # Land rings each group might own: those whose bounding cap meets one of the group's
@@ -559,6 +590,7 @@ if __name__ == '__main__':
     land = load_land()
     crust = load_polygons(os.path.join(root, model['crust']))
     names = plate_names(crust)
+    static_all = load_polygons(os.path.join(root, model['static']))
     if args.lip_report:
         lip_report(crust)
     rotation_model = pygplates.RotationModel(sorted(glob.glob(os.path.join(root, model['rotations']))))
@@ -567,7 +599,8 @@ if __name__ == '__main__':
     out_dir = os.path.join(REPO, 'data', args.model)
     os.makedirs(out_dir, exist_ok=True)
     for set_name, set_spec in spec['sets'].items():
-        data = build_set(args.model, set_name, set_spec, model, land, crust, names, rotation_model)
+        data = build_set(args.model, set_name, set_spec, model, land, crust, names, rotation_model,
+                         static_all)
         path = os.path.join(out_dir, f'{set_name}.json')
         with open(path, 'w') as f:
             json.dump(data, f, separators=(',', ':'))

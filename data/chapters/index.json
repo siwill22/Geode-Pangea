@@ -1,5 +1,18 @@
 [
-  {"id": "fit", "title": "1. Fit the continents"},
-  {"id": "blocks", "title": "2. More than six"},
-  {"id": "shelves", "title": "3. Beneath the waves"}
+  {
+    "id": "fit",
+    "title": "1. Fit the continents"
+  },
+  {
+    "id": "blocks",
+    "title": "2. More than six"
+  },
+  {
+    "id": "shelves",
+    "title": "3. Beneath the waves"
+  },
+  {
+    "id": "plumes",
+    "title": "4. Plates over plumes"
+  }
 ]
