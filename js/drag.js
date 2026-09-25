@@ -259,6 +259,9 @@ function setPlateRotation(plate, q) {
  * reconstruction age.
  */
 let editAge = null;
+// Which stage button is pressed: an isochron's age, or 0 for Present. Only a click on a
+// button changes it -- playing or scrubbing the time bar does not.
+let stageChoice = null;
 
 function keyedAt(plate, age) {
   let prevAge = 0, prevQ = IDENTITY;
@@ -473,6 +476,7 @@ function drawActiveRotation() {
   strokeSphereLine(path, 'rgba(255, 255, 255, 0.75)', 1.5, [4, 4]);
 
   const pole = lonLatToVec3(lon, lat);
+  drawPolePath(pole);
   for (const [v, filled] of [[pole, true], [pole.map((x) => -x), false]]) {
     const p = projector.project(v);
     if (!p) continue;
@@ -483,6 +487,56 @@ function drawActiveRotation() {
     ctx.fillStyle = active.colour;
     if (filled) ctx.fill();
     ctx.stroke();
+  }
+}
+
+/**
+ * The finite poles of the active plate from present day to the reconstruction age: the
+ * pole of its total rotation at each age, joined into a path, as papers plot them. A
+ * single steady rotation keeps one pole, so the path is a point; stages, or a parent that
+ * moves, make it wander. Each pole is taken in whichever hemisphere continues the path
+ * from `near`, the pole drawn now, so the path never jumps to an antipode. Discs mark the
+ * fitted ages where there are any, otherwise every 10 Myr, coloured by age; the
+ * antipodal path is drawn hollow.
+ */
+function drawPolePath(near) {
+  const ages = [];
+  for (let t = 1; t < reconAge; t++) ages.push(t);
+  ages.push(reconAge);
+  const marks = active.keys?.length ? active.keys.map((k) => k.age)
+    : ages.filter((t) => t % 10 === 0 || t === reconAge);
+  const all = [...new Set([...ages, ...marks])].sort((a, b) => a - b);
+  const poles = [];
+  let ref = near;
+  for (let i = all.length - 1; i >= 0; i--) {
+    const r = quatToPoleAngle(rotationAt(active, all[i]));
+    if (r.angle < 1e-6) continue;
+    let v = lonLatToVec3(r.lon, r.lat);
+    if (v[0] * ref[0] + v[1] * ref[1] + v[2] * ref[2] < 0) v = v.map((x) => -x);
+    poles.unshift({ age: all[i], v });
+    ref = v;
+  }
+  if (poles.length < 2) return;
+  const markSet = new Set(marks);
+  for (const sign of [1, -1]) {
+    const pts = poles.map((q) => q.v.map((x) => x * sign));
+    strokeSphereLine(pts, sign > 0 ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.4)', 1.5);
+    for (const [i, q] of poles.entries()) {
+      if (!markSet.has(q.age)) continue;
+      const p = projector.project(pts[i]);
+      if (!p) continue;
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], 4, 0, 2 * Math.PI);
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = sign > 0 ? MARKER_EDGE : ageColour(q.age);
+      if (sign > 0) { ctx.fillStyle = ageColour(q.age); ctx.fill(); }
+      ctx.stroke();
+      if (sign > 0 && active.keys?.length) {
+        ctx.font = '600 11px ui-sans-serif, system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(240, 246, 252, 0.85)';
+        ctx.fillText(`${Math.round(q.age)}`, p[0] + 7, p[1] - 5);
+      }
+    }
   }
 }
 
@@ -1252,7 +1306,14 @@ canvas.addEventListener('pointerdown', (e) => {
   const p = screenToSphere(e.clientX, e.clientY);
   // Right-drag or Alt-drag always turns the globe: an oceanic plate like the Pacific
   // covers so much of it that there may be little open ocean left to grab.
-  const plate = e.button === 2 || e.altKey ? null : pick(p);
+  let plate = e.button === 2 || e.altKey ? null : pick(p);
+  if (plate && stageChoice === 0) {
+    // Present is only for checking: nothing is fitted at present day. The press turns
+    // the globe instead, and the note says how to get back to fitting.
+    document.getElementById('stage-note').textContent =
+      'Present is for checking. To move South America again, pick an isochron above.';
+    plate = null;
+  }
   if (plate && shownAge !== editAge) {
     // Plates are edited at the reconstruction age only: that is what the saved
     // rotations mean. Grabbing one while scrubbed or playing returns there first, and the
@@ -1481,7 +1542,7 @@ function setUpTree(chapter) {
   if (!chapter.tree) return;
   mother = plates.find((p) => p.id === chapter.tree.mother);
   document.body.classList.add('tree');   // a wider panel, for the "moves with" column
-  for (const id of ['key-mother', 'key-link']) document.getElementById(id).hidden = false;
+  for (const id of ['key-mother', 'key-link', 'key-poles']) document.getElementById(id).hidden = false;
   document.getElementById('link-row').hidden = false;
   for (const [child, parent] of chapter.tree.links || []) {
     setParent(plates.find((p) => p.id === child), plates.find((p) => p.id === parent));
@@ -1515,11 +1576,11 @@ function updateStageButtons() {
   const fitted = new Set((spreading.left.keys || []).map((k) => k.age));
   for (const b of document.querySelectorAll('#stage-row button[data-age]')) {
     const age = Number(b.dataset.age);
-    b.setAttribute('aria-pressed', String(age > 0 ? Math.abs(age - editAge) < 1e-6 && shownAge > 0 : shownAge <= 0));
+    b.setAttribute('aria-pressed', String(Math.abs(age - stageChoice) < 1e-6));
     b.classList.toggle('fitted', fitted.has(age));
   }
   const name = spreading.stages.find((st) => Math.abs(st.age - editAge) < 1e-6);
-  document.getElementById('stage-note').textContent = shownAge <= 0
+  document.getElementById('stage-note').textContent = stageChoice === 0
     ? 'Today: every fitted stage\'s flowlines against the fracture zones.'
     : `Fitting ${/^\d/.test(name.chron) ? 'C' : ''}${name.chron} (${editAge} Ma): drag South America until the two bold isochrons meet.`;
 }
@@ -1545,7 +1606,7 @@ async function loadSpreading(chapter) {
   const chrons = new Map();
   for (const iso of spreading.isochrons) chrons.set(iso.chron, iso.age);
   spreading.stages = [...chrons].map(([chron, age]) => ({ chron, age })).sort((a, b) => a.age - b.age);
-  editAge = spreading.stages[0].age;
+  editAge = stageChoice = spreading.stages[0].age;
   const box = document.getElementById('stage-row');
   box.hidden = false;
   box.querySelector('.stages').innerHTML = spreading.stages.map((st) =>
@@ -1557,6 +1618,7 @@ async function loadSpreading(chapter) {
     if (!b) return;
     const age = Number(b.dataset.age);
     stopPlaying();
+    stageChoice = age;
     if (age > 0) {
       editAge = age;
       spreading.left.q = keyedAt(spreading.left, editAge);
@@ -1570,7 +1632,7 @@ async function loadSpreading(chapter) {
   document.getElementById('misfit-title').textContent = t.title;
   document.getElementById('misfit-col').textContent = t.column;
   document.getElementById('misfit-note').textContent = t.note;
-  for (const id of ['key-age', 'key-fz', 'key-flow', 'key-iso', 'source-spreading']) {
+  for (const id of ['key-age', 'key-fz', 'key-flow', 'key-iso', 'key-poles', 'source-spreading']) {
     document.getElementById(id).hidden = false;
   }
 }

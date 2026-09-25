@@ -88,6 +88,32 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   check((await page.evaluate(() => window.__dragPlates.shownAge)) === 0, 'Present shows today');
   await page.screenshot({ path: path.join(out, '2-present.png') });
 
+  // The pressed button changes only when the student clicks one: not by playing, and not
+  // by grabbing South America while Present is chosen (that press turns the globe).
+  const pressed = () => page.evaluate(() => [...document.querySelectorAll('#stage-row button[aria-pressed="true"]')].map((b) => b.dataset.age).join());
+  await page.click('#play');
+  await page.waitForFunction(() => window.__dragPlates.shownAge > 40, null, { timeout: 10000 });
+  await page.click('#play');   // pause part way
+  check(await pressed() === '0', `Present stays pressed while playing (${await pressed()})`);
+  await stageBtn('Present');
+  const qBefore = (await q())[201], keysBefore = await page.evaluate(() => JSON.stringify(window.__dragPlates.plates.find((p) => p.id === 201).keys));
+  await dragFrom(await centre(201), 50, 0);
+  check(await pressed() === '0', `Present stays pressed after a press on South America (${await pressed()})`);
+  check((await q())[201].every((x, i) => x === qBefore[i])
+    && keysBefore === await page.evaluate(() => JSON.stringify(window.__dragPlates.plates.find((p) => p.id === 201).keys))
+    && (await page.evaluate(() => window.__dragPlates.shownAge)) === 0, 'South America does not move at Present');
+
+  // A third stage, so the finite poles make a path; shown on the map.
+  await stageBtn('C21');
+  await dragFrom(await centre(201), 40, -20);
+  await page.evaluate(() => window.__dragPlates.setProjection('map'));
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(out, '3-poles-map.png') });
+  await page.evaluate(() => window.__dragPlates.setProjection('globe'));
+  await stageBtn('C34');
+  await dragFrom(await centre(201), 3, 0);
+  await page.screenshot({ path: path.join(out, '4-poles-globe.png') });
+
   // Dump for pygplates.
   const dump = await page.evaluate(() => {
     const d = window.__dragPlates; d.setShownAge(1e9);
