@@ -68,6 +68,19 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   const misfit1 = await page.evaluate(() => window.__dragPlates.misfit().mean);
   check(misfit1 !== misfit0, `the misfit responds (${Math.round(misfit0)} -> ${Math.round(misfit1)} km)`);
   await page.screenshot({ path: path.join(out, '1-dragged.png') });
+  await page.click('#misfit-toggle');
+  const folded = await page.evaluate(() => ({ body: getComputedStyle(document.getElementById('misfit-body')).display,
+    h: document.getElementById('misfit').getBoundingClientRect().height,
+    mean: document.getElementById('misfit-mean').textContent }));
+  check(folded.body === 'none' && folded.h < 60 && /km/.test(folded.mean),
+    `misfit box folds to its title and total (${Math.round(folded.h)} px, ${folded.mean})`);
+  await page.reload();
+  await page.waitForFunction(() => window.__dragPlates?.plates.length > 0);
+  check(await page.evaluate(() => document.getElementById('misfit').classList.contains('collapsed')),
+    'and stays folded after a reload');
+  await page.click('#misfit-toggle');
+  check(await page.evaluate(() => getComputedStyle(document.getElementById('misfit-body')).display !== 'none'),
+    'and opens again');
   const mid = 75;
 
   // 4. Dump for pygplates: the file, vertices at two ages, and the misfit.

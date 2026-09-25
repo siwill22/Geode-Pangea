@@ -1110,6 +1110,18 @@ document.getElementById('linking').addEventListener('change', (e) => {
 
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && pending) setPending(null); });
 
+// The misfit box folds down to its title and total, so it need not cover the globe.
+// Remembered in this browser, as a convenience only.
+function setMisfitOpen(open) {
+  document.getElementById('misfit').classList.toggle('collapsed', !open);
+  document.getElementById('misfit-toggle').setAttribute('aria-expanded', String(open));
+  try { localStorage.setItem('pangea:misfit-open', open ? '1' : '0'); } catch { /* not available */ }
+}
+document.getElementById('misfit-toggle').addEventListener('click', () => {
+  setMisfitOpen(document.getElementById('misfit').classList.contains('collapsed'));
+});
+try { if (localStorage.getItem('pangea:misfit-open') === '0') setMisfitOpen(false); } catch { /* not available */ }
+
 document.getElementById('ghosts').addEventListener('change', (e) => {
   showGhosts = e.target.checked;
   requestDraw();

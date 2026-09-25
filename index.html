@@ -71,12 +71,18 @@
 </aside>
 
 <aside class="misfit" id="misfit" hidden>
-  <h2>Hotspot misfit <span id="misfit-mean"></span></h2>
+  <h2>
+    <button type="button" id="misfit-toggle" class="misfit-toggle" aria-expanded="true" aria-controls="misfit-body">
+      <span class="chev" aria-hidden="true">&#9662;</span> Hotspot misfit <span id="misfit-mean"></span>
+    </button>
+  </h2>
+  <div id="misfit-body">
   <table class="plates">
     <thead><tr><th>Hotspot</th><th title="Dated samples">n</th><th title="Mean distance from each sample to the predicted trail at its age">km</th></tr></thead>
     <tbody></tbody>
   </table>
   <p class="note">Mean distance from each dated sample to where your rotations put the trail at the sample's age.</p>
+  </div>
 </aside>
 
 <div class="timebar" id="timebar">
