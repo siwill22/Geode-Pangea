@@ -9,7 +9,7 @@
   "tree": {
     "mother": 701
   },
-  "intro": "Every plate can move with another. Africa is the mother plate: choose, for each of the others, which plate it moves with, and a drag of that plate carries everything linked to it. Build the chain of links back to Africa, then move Africa and watch the whole assembly follow.",
+  "intro": "Every plate can move with another. Africa, the star, is the mother plate. Switch on Link plates, then click a plate and click the plate it should move with (or drag from one to the other); click the ocean to set it free again. Lines join each plate to the one it moves with. Build the links back to Africa, then move Africa and watch the whole assembly follow.",
   "questions": [
     "Link every plate so that moving Africa carries the whole supercontinent. Is there more than one way to do it?",
     "Press Play with two different trees that end in the same place. Do the plates take the same paths?",

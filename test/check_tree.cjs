@@ -11,6 +11,8 @@
  * - Dragging a child moves it and its own descendants only.
  * - Relinking a plate moves nothing at the reconstruction age but changes its path.
  * - A loop is not offered in the menus; Undo restores a link.
+ * - Link plates mode: click-click, drag-onto, click-ocean (mantle), loop and mother
+ *   refusals, Esc; no plate moves in that mode.
  * Writes the exported rotation tree and vertices at two ages for the pygplates check.
  */
 const fs = require('fs');
@@ -106,7 +108,33 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   check((await parents())[101] === 301, 'Undo put North America back with Eurasia');
   await page.screenshot({ path: path.join(out, '1-tree.png') });
 
-  // 7. Dump for pygplates.
+  // 7. Point and click, with the real Link plates toggle.
+  await page.click('#linking');
+  const click = async (id) => { const c = await centreOnScreen(id); await page.mouse.click(c[0], c[1]); };
+  const ocean = () => page.mouse.click(1385, 985);   // off the globe: not a plate
+  await click(501); await click(301);
+  check((await parents())[501] === 301, 'click India, click Eurasia: India moves with Eurasia');
+  const m = await centreOnScreen(702), a = await centreOnScreen(701);
+  await page.mouse.move(m[0], m[1]); await page.mouse.down();
+  await page.mouse.move(a[0], a[1], { steps: 15 }); await page.mouse.up();
+  check((await parents())[702] === 701, 'drag Madagascar onto Africa: linked');
+  const qBefore = await state();
+  await click(501); await ocean();
+  check((await parents())[501] === 0, 'click India, click the ocean: India moves with the mantle');
+  await click(501); await click(301);   // India with Eurasia again, then try the reverse
+  await click(301); await click(501);
+  check((await parents())[301] === 701, 'Eurasia onto India (its child) refused');
+  check(/loop/.test(await page.textContent('#link-note')), 'and the note says it would make a loop');
+  await click(701); await click(702);
+  check(/mother/.test(await page.textContent('#link-note')), 'Africa cannot be given a parent');
+  await click(304); await page.keyboard.press('Escape');
+  check((await page.evaluate(() => window.__dragPlates.pending)) === null, 'Esc cancels a pick');
+  const qAfter = await state();
+  check(Object.keys(qAfter).every((id) => same(qAfter[id], qBefore[id])), 'no plate moved in link mode');
+  await page.screenshot({ path: path.join(out, '2-links.png') });
+  await page.click('#linking');
+
+  // 8. Dump for pygplates.
   const dump = await page.evaluate(() => {
     const d = window.__dragPlates;
     const verts = (age) => { d.setShownAge(age);

@@ -47,6 +47,9 @@ let showCrust = false;     // set by the chapter
 const undoStack = [];      // Map(plate -> q) of every plate, as it was before each change
 let initialQ = new Map();  // the chapter's starting rotations, for Reset
 let mother = null;         // the root of the rotation tree, in chapters that build one (else null)
+let linking = false;       // "Link plates" mode: clicks make links instead of moving plates
+let pending = null;        // in that mode, the plate picked first, waiting for its parent
+let cursorOnSphere = null; // where the pointer is, for the rubber band from `pending`
 let trailCells = [];       // [{ v, age, colour, plate }]: dated hotspot-chain seafloor, where shown
 let trailCellDeg = 1 / 6;
 let hotspots = [];         // [{ name, h, samples: [{ v, age, plate }] }] in chapters that show them
@@ -596,7 +599,97 @@ function draw() {
   drawTrailCells();
   for (const p of plates) drawPlate(p);
   drawHotspots();
+  drawTree();
   drawActiveRotation();
+}
+
+// ---- The rotation tree, drawn ----------------------------------------------------------
+
+// The Plate Tree viewer's look: links in orange along great circles between plate centres,
+// the mother plate a gold star, every other plate a light dot.
+const TREE_STYLE = { link: '#e8663c', mother: '#ffd34d', node: '#f0f6fc', pending: '#6fe3ff' };
+
+/** Points along the great circle from a to b, so a long link follows the sphere. */
+function greatCircle(a, b) {
+  const dot = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
+  const omega = Math.acos(dot);
+  if (omega < 1e-6) return [a, b];
+  const steps = Math.max(2, Math.ceil(omega / DEG / 2)), sin = Math.sin(omega), out = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps, s0 = Math.sin((1 - t) * omega) / sin, s1 = Math.sin(t * omega) / sin;
+    out.push([a[0] * s0 + b[0] * s1, a[1] * s0 + b[1] * s1, a[2] * s0 + b[2] * s1]);
+  }
+  return out;
+}
+
+/** A plate's node: the centre of its crust, where the plate is drawn now. */
+const nodeOf = (p) => rotate(p.shown, p.centre);
+
+function traceStar(x, y, rOuter, rInner) {
+  let a = -Math.PI / 2;
+  ctx.moveTo(x + Math.cos(a) * rOuter, y + Math.sin(a) * rOuter);
+  for (let i = 0; i < 5; i++) {
+    a += Math.PI / 5; ctx.lineTo(x + Math.cos(a) * rInner, y + Math.sin(a) * rInner);
+    a += Math.PI / 5; ctx.lineTo(x + Math.cos(a) * rOuter, y + Math.sin(a) * rOuter);
+  }
+  ctx.closePath();
+}
+
+function drawTree() {
+  if (!mother) return;
+  for (const p of plates) {
+    if (p.parent) strokeSphereLine(greatCircle(nodeOf(p), nodeOf(p.parent)), TREE_STYLE.link, 2.4);
+  }
+  if (pending && cursorOnSphere) {
+    strokeSphereLine(greatCircle(nodeOf(pending), cursorOnSphere), TREE_STYLE.pending, 2, [5, 4]);
+  }
+  for (const p of plates) {
+    const s = projector.project(nodeOf(p));
+    if (!s) continue;
+    // Light nodes with a dark edge, so they read on any plate's fill.
+    ctx.beginPath();
+    if (p === mother) traceStar(s[0], s[1], 13, 5.5);
+    else ctx.arc(s[0], s[1], 5.5, 0, 2 * Math.PI);
+    ctx.fillStyle = p === mother ? TREE_STYLE.mother : TREE_STYLE.node;
+    ctx.fill();
+    ctx.lineWidth = p === mother ? 2 : 1.6;
+    ctx.strokeStyle = '#0d1b2e';
+    ctx.stroke();
+    if (p === pending) {
+      ctx.beginPath();
+      ctx.arc(s[0], s[1], 10, 0, 2 * Math.PI);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = TREE_STYLE.pending;
+      ctx.stroke();
+    }
+  }
+}
+
+/** Link `child` to `parent` (null: the mantle) from a click, saying why if it cannot. */
+function linkByClick(child, parent) {
+  const note = document.getElementById('link-note');
+  if (child === mother && parent) {
+    note.textContent = `${mother.name} is the mother plate: it moves with nothing.`;
+    return;
+  }
+  const before = snapshot();
+  if (parent && descendants(child).includes(parent)) {
+    note.textContent = `That would make a loop: ${parent.name} already moves with ${child.name}.`;
+    return;
+  }
+  if (child.parent === parent) { note.textContent = ''; return; }
+  setParent(child, parent);
+  undoStack.push(before);
+  note.textContent = parent ? `${child.name} now moves with ${parent.name}.`
+    : `${child.name} now moves with the mantle.`;
+  updateTable();
+}
+
+function setPending(p) {
+  pending = p;
+  document.getElementById('link-note').textContent = p
+    ? `${p.name}: now click the plate it moves with, or the ocean for the mantle.` : '';
+  requestDraw();
 }
 
 /** Draw a plate: its crust (in chapters that show it), then its land, clipped to its crust. */
@@ -732,6 +825,17 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 canvas.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 && e.button !== 2) return;
+  if (linking && e.button === 0 && !e.altKey) {
+    // In link mode a press never moves a plate. What it does is decided at release:
+    // a click picks a plate (or links the picked one), a press on one plate released on
+    // another links them, and a drag that started on the ocean turns the globe.
+    drag = { mode: 'link', x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY,
+      from: pick(screenToSphere(e.clientX, e.clientY)), was: pending, orbiting: false };
+    if (drag.from && !pending) setPending(drag.from);
+    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    return;
+  }
   const p = screenToSphere(e.clientX, e.clientY);
   // Right-drag or Alt-drag always turns the globe: an oceanic plate like the Pacific
   // covers so much of it that there may be little open ocean left to grab.
@@ -770,6 +874,23 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
+  if (linking) {
+    cursorOnSphere = screenToSphere(e.clientX, e.clientY);
+    if (pending) requestDraw();
+  }
+  if (drag?.mode === 'link') {
+    // A press on the ocean that moves becomes a turn of the globe.
+    if (!drag.from && (drag.orbiting || Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 4)) {
+      drag.orbiting = true;
+      const scale = 90 / projector.radius;
+      view.lon -= (e.clientX - drag.x) * scale;
+      view.lat = Math.max(-89.9, Math.min(89.9, view.lat + (e.clientY - drag.y) * scale));
+      requestDraw();
+    }
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    return;
+  }
   if (!drag) {
     const over = pick(screenToSphere(e.clientX, e.clientY));
     canvas.classList.toggle('over-plate', !!over);
@@ -808,6 +929,20 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 function endDrag(e) {
+  if (drag?.mode === 'link') {
+    const { from, was, orbiting } = drag;
+    drag = null;
+    canvas.releasePointerCapture?.(e.pointerId);
+    if (orbiting || e.type === 'pointercancel') return;
+    const to = pick(screenToSphere(e.clientX, e.clientY));
+    if (from && to && to !== from) { linkByClick(from, to); setPending(null); }  // dragged A onto B
+    else if (from && to === from) {                                             // clicked a plate
+      if (was === from) setPending(null);                                       // ... again: cancel
+      else if (was) { linkByClick(was, from); pending = null; requestDraw(); }
+      // (no earlier pick: it was picked on the press)
+    } else if (!from && was) { linkByClick(was, null); pending = null; requestDraw(); }  // ocean
+    return;
+  }
   if (!drag) return;
   // A click that did not move the plate is not worth an undo step.
   if (drag.plate && drag.plate.q === drag.q0) undoStack.pop();
@@ -839,6 +974,14 @@ document.getElementById('reset').addEventListener('click', () => {
   requestDraw();
 });
 
+document.getElementById('linking').addEventListener('change', (e) => {
+  linking = e.target.checked;
+  setPending(null);
+  canvas.classList.toggle('linking', linking);
+});
+
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && pending) setPending(null); });
+
 document.getElementById('ghosts').addEventListener('change', (e) => {
   showGhosts = e.target.checked;
   requestDraw();
@@ -868,6 +1011,7 @@ document.getElementById('export').addEventListener('click', () => {
 function setUpTree(chapter) {
   if (!chapter.tree) return;
   mother = plates.find((p) => p.id === chapter.tree.mother);
+  document.getElementById('link-row').hidden = false;
   for (const [child, parent] of chapter.tree.links || []) {
     setParent(plates.find((p) => p.id === child), plates.find((p) => p.id === parent));
   }
@@ -947,7 +1091,7 @@ async function main() {
   window.__dragPlates = {
     get plates() { return plates; }, chapter, projector, view, pick, screenToSphere,
     rotationFile, draw, setShownAge, get shownAge() { return shownAge; },
-    get mother() { return mother; }, setParent, relativeQ, misfit, rotationAt, hotspots: () => hotspots,
+    get mother() { return mother; }, get pending() { return pending; }, nodeOf, setParent, relativeQ, misfit, rotationAt, hotspots: () => hotspots,
     trailCells: () => trailCells,
     rotateByPlate: (id, v) => rotate(plates.find((p) => p.id === id).q, v),
     rotateByPlateShown: (id, v) => rotate(plates.find((p) => p.id === id).shown, v),

@@ -206,3 +206,6 @@ input[type=checkbox] { accent-color: var(--accent); }
 }
 .tree .panel { width: min(26rem, calc(100vw - 2rem)); }
 .tree .plates td { padding: 0.15rem 0.2rem; }
+#link-row { align-items: baseline; flex-wrap: wrap; }
+#link-note { margin: 0; flex: 1 1 12rem; }
+canvas.linking, canvas.linking.over-plate { cursor: crosshair; }
