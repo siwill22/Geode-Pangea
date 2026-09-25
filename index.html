@@ -45,11 +45,21 @@
     <button type="button" id="reset">Reset</button>
   </div>
   <div class="row">
-    <label class="age">Age <input type="number" id="age" value="100" min="0" step="1"> Ma</label>
+    <label class="age">Reconstruction age <input type="number" id="age" value="100" min="1" step="1"> Ma</label>
     <button type="button" id="export">Export .rot</button>
   </div>
   <p class="source">Land: Natural Earth 1:110m. Plates and submerged crust: M&uuml;ller et al. (2019) continental polygons, grouped and simplified for this page.</p>
 </aside>
+
+<div class="timebar" id="timebar">
+  <button type="button" id="play" class="play" aria-label="Play to present day">&#9654; Play</button>
+  <!-- Old on the left, present on the right (petrify ADR-0002). The slider's value runs
+       0..age left to right and is read as age = max - value, so the right arrow key
+       still means "toward the present". -->
+  <input type="range" id="scrub" min="0" max="100" step="0.1" value="0"
+         aria-label="Displayed age, present day at the right">
+  <span class="shown-age" id="shown-age">100 Ma</span>
+</div>
 
 <script type="module" src="js/drag.js"></script>
 </body>

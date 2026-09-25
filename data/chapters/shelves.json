@@ -1,14 +1,14 @@
 {
   "id": "shelves",
   "title": "Beneath the waves",
-  "set": "Muller2019/blocks.json",
+  "set": "Muller2019/shelves.json",
   "show": {
     "crust": true
   },
-  "intro": "The same plates, now with the continental crust that lies under the sea: shelves and stretched margins. It moves with the land, and it is the real edge of each continent.",
+  "intro": "The same plates, now with the continental crust that lies under the sea: shelves and stretched margins. It moves with the land, and it is the real edge of each continent. And one continent appears that you could not see before: Zealandia, almost all of it underwater.",
   "questions": [
     "Fit the plates again, edge of crust to edge of crust. Is it better than the coastline fit?",
-    "Which continents gained the most hidden crust? Where is it?",
+    "Where does Zealandia fit? Which continents was it once joined to?",
     "Sea level has changed through time. Why does that make the coastline a poor edge to fit?"
   ],
   "exportAge": 200

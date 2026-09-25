@@ -11,6 +11,11 @@ file.
 - The table gives each plate's *total* rotation from its present-day position (pole
   lat/lon and angle). The active plate's pole is marked on the globe, with the small
   circle its centre travelled along.
+- **Play** runs the reconstruction forward to present day. Each plate turns about its
+  own Euler pole, just as GPlates interpolates the exported file. At 0 Ma the button
+  becomes **Back**. The slider scrubs anywhere in between, with present day at the right.
+  Your rotations are never changed, and grabbing a plate returns to the reconstruction
+  age to edit it.
 - **Export .rot** writes, for each plate, the identity at 0 Ma and the dragged rotation
   at the chosen age, relative to plate 000.
 
@@ -29,7 +34,7 @@ show. Pick one from the menu, or link it directly with `?chapter=<id>`.
 |---|---|
 | `fit` | 1. Fit the continents: six continents, coastlines only |
 | `blocks` | 2. More than six: plus India, Iberia, Madagascar, Greenland and Mexico |
-| `shelves` | 3. Beneath the waves: the chapter-2 plates with their submerged continental crust |
+| `shelves` | 3. Beneath the waves: the chapter-2 plates with their submerged continental crust, plus Zealandia |
 
 ## Data
 

@@ -134,7 +134,58 @@ function check(ok, msg) {
   check(twist.drift < 1e-5, `its centre did not move (${twist.drift.toExponential(1)} deg)`);
   await page.screenshot({ path: path.join(out, '3-australia-twisted.png') });
 
-  // 4. For the pygplates parity check: the rotation file, and every plate's rotated vertices.
+  // 4. Play to present day and back, with the real buttons and slider.
+  const poleAngle = (q) => {
+    let [x, y, z, w] = q; if (w < 0) { x = -x; y = -y; z = -z; w = -w; }
+    const sn = Math.hypot(x, y, z);
+    return { axis: sn > 1e-12 ? [x / sn, y / sn, z / sn] : [0, 0, 1], angle: 2 * Math.atan2(sn, w) * 180 / Math.PI };
+  };
+  const saved = await page.evaluate(() => window.__dragPlates.plates.map((p) => ({ id: p.id, q: [...p.q] })));
+  const recon = await page.evaluate(() => window.__dragPlates.shownAge);
+  await page.click('#play');
+  await page.waitForTimeout(1500);
+  const mid = await page.evaluate(() => ({ age: window.__dragPlates.shownAge,
+    shown: window.__dragPlates.plates.map((p) => ({ id: p.id, q: [...p.shown] })) }));
+  check(mid.age > 0 && mid.age < recon, `mid-play the display is at ${mid.age.toFixed(1)} Ma`);
+  let midOk = true;
+  for (const { id, q } of saved) {
+    const a = poleAngle(q), b = poleAngle(mid.shown.find((x) => x.id === id).q);
+    if (a.angle < 1e-6) { midOk = midOk && b.angle < 1e-6; continue; }
+    const sameAxis = a.axis.reduce((s, v, i) => s + v * b.axis[i], 0) > 1 - 1e-9;
+    midOk = midOk && sameAxis && Math.abs(b.angle - a.angle * mid.age / recon) < 1e-6;
+  }
+  check(midOk, 'mid-play every plate is turned about its own saved pole, by age/recon of its angle');
+  await page.screenshot({ path: path.join(out, '4-playing.png') });
+  await page.waitForFunction(() => window.__dragPlates.shownAge === 0, null, { timeout: 15000 });
+  const atZero = await page.evaluate(() => window.__dragPlates.plates.every((p) => {
+    const [x, y, z] = p.shown; return Math.hypot(x, y, z) < 1e-12; }));
+  check(atZero, 'at 0 Ma every plate is back at its present-day position');
+  check((await page.textContent('#play')).includes('Back'), 'the button now offers Back');
+  await page.screenshot({ path: path.join(out, '5-present.png') });
+  await page.click('#play');
+  await page.waitForFunction((r) => window.__dragPlates.shownAge === r, recon, { timeout: 15000 });
+  const restored = await page.evaluate(() => window.__dragPlates.plates.map((p) => ({ id: p.id, q: [...p.shown] })));
+  check(saved.every(({ id, q }) => q.every((v, i) => v === restored.find((x) => x.id === id).q[i])),
+    'Back returns every plate exactly to its saved rotation');
+
+  // Scrub part-way with the keyboard (right arrow = toward the present), then grab a plate:
+  // editing happens at the reconstruction age, so the display must snap back there.
+  await page.focus('#scrub');
+  for (let i = 0; i < 300; i++) await page.keyboard.press('ArrowRight');
+  const scrubbed = await page.evaluate(() => window.__dragPlates.shownAge);
+  check(scrubbed < recon, `right arrow moves toward the present (${recon} -> ${scrubbed.toFixed(1)} Ma)`);
+  const target = await page.evaluate(() => {
+    const d = window.__dragPlates, p = d.plates.find((x) => x.id === 801);
+    const s = d.projector.project(d.rotateByPlateShown(801, p.centre));
+    return s && [s[0], s[1]];
+  });
+  await page.mouse.move(target[0], target[1]);
+  await page.mouse.down();
+  const snapped = await page.evaluate(() => window.__dragPlates.shownAge);
+  await page.mouse.up();
+  check(snapped === recon, `grabbing a plate while scrubbed returns to ${recon} Ma (got ${snapped})`);
+
+  // 5. For the pygplates parity check: the rotation file, and every plate's rotated vertices.
   const dump = await page.evaluate(() => {
     const d = window.__dragPlates;
     return {

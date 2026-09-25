@@ -27,7 +27,7 @@ import {
   ringBoundingCap,
 } from '../vendor/petrify/sphere.js';
 import {
-  quatToMat3, mat3Apply, quatMultiply, quatConjugate, quatFromAxisAngle,
+  quatToMat3, mat3Apply, quatMultiply, quatConjugate, quatFromAxisAngle, quatSlerp,
   quatBetween, quatToPoleAngle,
 } from '../vendor/petrify/rotations.js';
 
@@ -45,6 +45,19 @@ let active = null;         // the plate most recently touched
 let showGhosts = true;
 let showCrust = false;     // set by the chapter
 const undoStack = [];      // { plate, q } as it was before each drag
+
+/*
+ * Time. Each plate's `q` is its SAVED rotation: where the student put it, at the
+ * reconstruction age. What is drawn is `shown`, the rotation at the displayed age --
+ * the saved one scaled down about the same Euler pole, i.e. a slerp from the identity
+ * (present day) to `q`. That is how GPlates interpolates between the 0 Ma and the
+ * reconstruction-age lines of the exported file, so playing here shows exactly the
+ * motion the .rot file describes. Playing never touches `q`, which is why scrubbing
+ * back returns to the reconstruction exactly.
+ */
+let reconAge = 100;        // the age the saved rotations stand for (the Age box)
+let shownAge = 100;        // the age being displayed, reconAge .. 0
+let playing = null;        // { from, to, start } while animating
 
 const rotate = (q, v) => mat3Apply(quatToMat3(q), v);
 
@@ -197,7 +210,7 @@ function pick(p) {
   if (!p) return null;
   for (let k = plates.length - 1; k >= 0; k--) {
     const plate = plates[k];
-    const home = rotate(quatConjugate(plate.q), p);
+    const home = rotate(quatConjugate(plate.shown), p);
     if (!inRings(plate.crustLayer, plate.crustCaps, home)) continue;
     if (showCrust || inRings(plate.landLayer, plate.landCaps, home)) return plate;
   }
@@ -206,7 +219,61 @@ function pick(p) {
 
 function setPlateRotation(plate, q) {
   plate.q = q;
-  for (const layer of plate.layers) layer.setRotations({ [plate.id]: q });
+  showPlate(plate);
+}
+
+/** The rotation to draw a plate with at the displayed age. */
+function shownRotation(q) {
+  if (shownAge >= reconAge) return q;
+  if (shownAge <= 0) return IDENTITY;
+  return quatSlerp(IDENTITY, q, shownAge / reconAge);
+}
+
+function showPlate(plate) {
+  plate.shown = shownRotation(plate.q);
+  for (const layer of plate.layers) layer.setRotations({ [plate.id]: plate.shown });
+}
+
+function setShownAge(age) {
+  shownAge = Math.max(0, Math.min(reconAge, age));
+  for (const p of plates) showPlate(p);
+  const scrub = document.getElementById('scrub');
+  scrub.max = String(reconAge);
+  scrub.value = String(reconAge - shownAge);
+  document.getElementById('shown-age').textContent = `${shownAge.toFixed(shownAge < 10 ? 1 : 0)} Ma`;
+  const play = document.getElementById('play');
+  if (playing) {
+    play.innerHTML = '&#10074;&#10074; Pause';
+    play.setAttribute('aria-label', 'Pause');
+  } else if (shownAge <= 0) {
+    play.innerHTML = '&#9664; Back';
+    play.setAttribute('aria-label', `Play back to the reconstruction at ${reconAge} Ma`);
+  } else {
+    play.innerHTML = '&#9654; Play';
+    play.setAttribute('aria-label', 'Play to present day');
+  }
+  requestDraw();
+}
+
+/** Animate the displayed age to `to`, over a time proportional to the distance. */
+const FULL_PLAY_SECONDS = 5;
+function playTo(to) {
+  playing = { from: shownAge, to, start: performance.now() };
+  const seconds = FULL_PLAY_SECONDS * Math.abs(to - shownAge) / reconAge;
+  const step = (now) => {
+    if (!playing) return;
+    const t = seconds > 0 ? Math.min(1, (now - playing.start) / 1000 / seconds) : 1;
+    const age = playing.from + (playing.to - playing.from) * t;
+    if (t >= 1) playing = null;
+    setShownAge(age);
+    if (playing) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function stopPlaying() {
+  playing = null;
+  setShownAge(shownAge);
 }
 
 function bringToTop(plate) {
@@ -408,7 +475,17 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
   const p = screenToSphere(e.clientX, e.clientY);
   const plate = pick(p);
-  if (plate) {
+  if (plate && shownAge !== reconAge) {
+    // Plates are edited at the reconstruction age only: that is what the saved
+    // rotations mean. Grabbing one while scrubbed or playing returns there first, and the
+    // grab is taken again from the plate as it is drawn there.
+    playing = null;
+    setShownAge(reconAge);
+    draw();
+  }
+  const grabbed = plate && pick(screenToSphere(e.clientX, e.clientY));
+  if (grabbed) {
+    const plate = grabbed;
     const twist = e.shiftKey || document.getElementById('twist').checked;
     undoStack.push({ plate, q: plate.q });
     active = plate;
@@ -501,8 +578,26 @@ document.getElementById('ghosts').addEventListener('change', (e) => {
   requestDraw();
 });
 
+document.getElementById('play').addEventListener('click', () => {
+  if (playing) stopPlaying();
+  else playTo(shownAge > 0 ? 0 : reconAge);
+});
+
+document.getElementById('scrub').addEventListener('input', (e) => {
+  playing = null;
+  setShownAge(reconAge - Number(e.target.value));
+});
+
+document.getElementById('age').addEventListener('change', (e) => {
+  // The saved rotations now stand for this age; the display follows at the same fraction.
+  const frac = reconAge > 0 ? shownAge / reconAge : 1;
+  reconAge = Math.max(1, Number(e.target.value) || reconAge);
+  e.target.value = reconAge;
+  setShownAge(frac * reconAge);
+});
+
 document.getElementById('export').addEventListener('click', () => {
-  const age = Math.max(0, Number(document.getElementById('age').value) || 0);
+  const age = reconAge;
   download(rotationFile(age), `pangea-${age}Ma.rot`);
 });
 
@@ -531,16 +626,21 @@ async function loadChapter() {
 async function main() {
   const chapter = await loadChapter();
   plates = await loadPlates(chapter);
+  reconAge = Math.max(1, Number(document.getElementById('age').value) || 100);
+  shownAge = reconAge;
+  for (const p of plates) p.shown = p.q;
   resize();
   addEventListener('resize', () => { resize(); draw(); });
   updateTable();
+  setShownAge(reconAge);
   draw();
 
   // For automated checks: the same state and functions the gestures use, nothing more.
   window.__dragPlates = {
     get plates() { return plates; }, chapter, projector, view, pick, screenToSphere,
-    rotationFile, draw,
+    rotationFile, draw, setShownAge, get shownAge() { return shownAge; },
     rotateByPlate: (id, v) => rotate(plates.find((p) => p.id === id).q, v),
+    rotateByPlateShown: (id, v) => rotate(plates.find((p) => p.id === id).shown, v),
   };
 }
 

@@ -130,3 +130,32 @@ button {
 button:hover:not(:disabled) { background: rgba(143, 212, 240, 0.22); }
 button:disabled { opacity: 0.4; cursor: default; }
 input[type=checkbox] { accent-color: var(--accent); }
+
+.timebar {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  width: min(34rem, calc(100vw - 2rem));
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+}
+@media (min-width: 901px) {
+  /* Centre under the globe, not the window: the panel takes the left of the screen. */
+  .timebar { left: calc(50% + 12rem); }
+}
+.timebar input[type=range] { flex: 1; accent-color: var(--accent); }
+.play { min-width: 5.5rem; }
+.shown-age {
+  min-width: 4.5rem;
+  text-align: right;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
