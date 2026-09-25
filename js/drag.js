@@ -245,7 +245,34 @@ function pick(p) {
 
 function setPlateRotation(plate, q) {
   plate.q = q;
+  if (plate.keys) setKey(plate, editAge, q);
   showPlate(plate);
+}
+
+/*
+ * Stages. In a chapter that fits the plates one age at a time, a plate holds a rotation
+ * for each age the student has fitted ("keys", total rotations, oldest last), and its
+ * rotation at any other age is interpolated between the two keys either side of it, with
+ * the identity at present day -- exactly how GPlates reads the lines of a rotation file.
+ * Older than the oldest key, the plate stays where that key puts it. `editAge` is the age
+ * being fitted: dragging sets the key there. In every other chapter editAge is simply the
+ * reconstruction age.
+ */
+let editAge = null;
+
+function keyedAt(plate, age) {
+  let prevAge = 0, prevQ = IDENTITY;
+  for (const k of plate.keys) {
+    if (age <= k.age) return age <= prevAge ? prevQ : quatSlerp(prevQ, k.q, (age - prevAge) / (k.age - prevAge));
+    prevAge = k.age; prevQ = k.q;
+  }
+  return prevQ;
+}
+
+function setKey(plate, age, q) {
+  const k = plate.keys.find((x) => Math.abs(x.age - age) < 1e-9);
+  if (k) k.q = q;
+  else { plate.keys.push({ age, q }); plate.keys.sort((a, b) => a.age - b.age); }
 }
 
 /*
@@ -286,6 +313,7 @@ function treeOrder() {
  * the tree decides the path -- and so the shape of every hotspot trail.
  */
 function rotationAt(plate, age) {
+  if (plate.keys) return keyedAt(plate, age);
   if (age >= reconAge) return plate.q;
   if (age <= 0) return IDENTITY;
   const own = quatSlerp(IDENTITY, relativeQ(plate), age / reconAge);
@@ -314,12 +342,17 @@ function showPlate(plate) {
 
 /** Every plate's saved rotation and parent, for undo. */
 function snapshot() {
-  return new Map(plates.map((p) => [p, { q: p.q, parent: p.parent }]));
+  return new Map(plates.map((p) => [p, { q: p.q, parent: p.parent,
+    keys: p.keys && p.keys.map((k) => ({ ...k })) }]));
 }
 
 function restore(snap) {
-  for (const [p, s] of snap) { p.q = s.q; p.parent = s.parent; }
+  for (const [p, s] of snap) {
+    p.q = s.q; p.parent = s.parent;
+    if (s.keys) { p.keys = s.keys.map((k) => ({ ...k })); p.q = keyedAt(p, editAge); }
+  }
   for (const p of plates) showPlate(p);
+  updateStageButtons();
 }
 
 function setShownAge(age) {
@@ -329,6 +362,7 @@ function setShownAge(age) {
   scrub.max = String(reconAge);
   scrub.value = String(reconAge - shownAge);
   document.getElementById('shown-age').textContent = `${shownAge.toFixed(shownAge < 10 ? 1 : 0)} Ma`;
+  if (spreading?.stages) updateStageButtons();
   const play = document.getElementById('play');
   if (playing) {
     play.innerHTML = '&#10074;&#10074; Pause';
@@ -587,15 +621,37 @@ function relativeAt(age) {
   return quatMultiply(quatConjugate(rotationAt(right, age)), rotationAt(left, age));
 }
 
-/** Present-day flowline points of one seed for ages 0..reconAge (1 Myr steps), per branch. */
+/*
+ * Present-day flowline points of one seed, per branch, at spreading.flowAges. Symmetric
+ * spreading, integrated step by step in Africa's frame: over each step the ridge moves by
+ * half of South America's motion in that step, R(older) R(younger)^-1, so the point of
+ * Africa's seafloor formed at age t is C(t) x, with C accumulating those half-steps, and
+ * the matching point on South America is R(t)^-1 C(t) x. Within one fitted stage every
+ * step turns about the same axis, so this is exact provided the fitted ages are among the
+ * sample ages -- it matches pygplates' flowline features (prep/check_satlantic_parity.py).
+ */
 function flowline(seed) {
-  const onRight = [], onLeft = [];
-  for (let tau = 0; tau <= reconAge + 1e-9; tau += 1) {
-    const h = quatSlerp(IDENTITY, relativeAt(tau), 0.5);
-    onRight.push(rotate(h, seed));
-    onLeft.push(rotate(quatConjugate(h), seed));
+  const ages = spreading.flowAges;
+  const onRight = [seed], onLeft = [seed];
+  let c = IDENTITY, young = relativeAt(0);
+  for (let k = 1; k < ages.length; k++) {
+    const old = relativeAt(ages[k]);
+    c = quatMultiply(quatSlerp(IDENTITY, quatMultiply(old, quatConjugate(young)), 0.5), c);
+    const r = rotate(c, seed);
+    onRight.push(r);
+    onLeft.push(rotate(quatConjugate(old), r));
+    young = old;
   }
   return { [spreading.right.id]: onRight, [spreading.left.id]: onLeft };
+}
+
+/** Sample ages for flowlines: every Myr, plus every age that has been fitted. */
+function updateFlowAges() {
+  const set = new Set();
+  for (let t = 0; t <= reconAge; t += 1) set.add(t);
+  set.add(reconAge);
+  for (const p of plates) for (const k of p.keys || []) set.add(k.age);
+  spreading.flowAges = [...set].sort((a, b) => a - b);
 }
 
 /** Great-circle distance, radians, from p to the polyline pts (unit vectors). Hot: no allocation. */
@@ -626,31 +682,38 @@ function distanceToPolyline(p, pts) {
 }
 
 /*
- * Everything is drawn at every age, riding on its plate, so the student sees what they are
- * fitting from the start -- the same rule as the hotspot trails: full strength at the
- * reconstruction age, where plates are edited, and what had not formed yet at the
- * displayed age faint while playing or scrubbing. A fracture zone and its own flowline
- * branch ride on the same plate, so whether they line up can be judged in any frame.
+ * The ocean as it was at the displayed age t: isochrons, fracture zones (by the age of
+ * the seafloor under each vertex) and flowlines older than t, each riding on its plate.
+ * The isochron pair of the age being fitted is drawn bold; the others thin. At present
+ * day all of it shows: the flowlines of every fitted stage against the fracture zones.
  */
 function drawSpreading() {
   if (!spreading) return;
+  const t = shownAge - 0.05;
   for (const iso of spreading.isochrons) {
-    ctx.globalAlpha = formedAlpha(iso.age, 0.2);
-    strokeSphereLine(iso.pts.map((v) => rotate(iso.plate.shown, v)), ageColour(iso.age), 2.2);
+    if (iso.age < t) continue;
+    const target = Math.abs(iso.age - editAge) < 1e-6 && shownAge > 0;
+    ctx.globalAlpha = target || shownAge <= 0 ? 1 : 0.55;
+    strokeSphereLine(iso.pts.map((v) => rotate(iso.plate.shown, v)), ageColour(iso.age), target ? 4 : 1.8);
   }
   ctx.globalAlpha = 1;
   for (const fz of spreading.fzs) {
-    strokeSphereLine(fz.pts.map((v) => rotate(fz.plate.shown, v)), 'rgba(236, 242, 250, 0.9)', 1.8);
+    const run = [];
+    const flush = () => { if (run.length > 1) strokeSphereLine(run, 'rgba(236, 242, 250, 0.9)', 1.8); run.length = 0; };
+    fz.pts.forEach((v, i) => { if (fz.ages[i] == null || fz.ages[i] >= t) run.push(rotate(fz.plate.shown, v)); else flush(); });
+    flush();
   }
-  // Synthetic flowlines, one per seed, both branches, with an age disc every 10 Myr.
+  const ages = spreading.flowAges;
+  const first = ages.findIndex((a) => a >= t);
   for (const fl of spreading.flow) {
     for (const plate of [spreading.left, spreading.right]) {
-      const pts = fl[plate.id].map((v) => rotate(plate.shown, v));
-      strokeSphereLine(pts, 'rgba(255, 255, 255, 0.35)', 1, [2, 3]);
-      for (let tau = 10; tau <= reconAge; tau += 10) {
-        const p = projector.project(pts[tau]);
-        if (!p) continue;
-        ctx.globalAlpha = formedAlpha(tau, 0.35);
+      const pts = fl[plate.id].slice(first).map((v) => rotate(plate.shown, v));
+      if (pts.length > 1) strokeSphereLine(pts, 'rgba(255, 255, 255, 0.35)', 1, [2, 3]);
+      pts.forEach((v, j) => {
+        const tau = ages[first + j];
+        if (tau === 0 || tau % 10 !== 0) return;
+        const p = projector.project(v);
+        if (!p) return;
         ctx.beginPath();
         ctx.arc(p[0], p[1], tau % 50 === 0 ? 4.5 : 3.2, 0, 2 * Math.PI);
         ctx.fillStyle = ageColour(tau);
@@ -658,8 +721,7 @@ function drawSpreading() {
         ctx.lineWidth = 0.8;
         ctx.strokeStyle = MARKER_EDGE;
         ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
+      });
     }
   }
 }
@@ -667,6 +729,7 @@ function drawSpreading() {
 /** Recompute the synthetic flowlines (after any change to the rotations). */
 function updateFlowlines() {
   if (!spreading) return;
+  updateFlowAges();
   spreading.flow = spreading.seeds.map(flowline);
 }
 
@@ -699,7 +762,8 @@ function spreadingMisfit() {
       const w = rotate(r, v);
       s += Math.min(...rightLines.map((l) => distanceToPolyline(w, l))) * R; k++;
     }
-    rows.push({ name: `${/^\d/.test(chron) ? 'C' : ''}${chron} (${Math.round(c.age)} Ma)`, n: k, km: s / k, age: c.age });
+    rows.push({ name: `${/^\d/.test(chron) ? 'C' : ''}${chron} (${Math.round(c.age)} Ma)`, n: k, km: s / k, age: c.age,
+      fitting: Math.abs(c.age - editAge) < 1e-6 });
   }
   return { per: rows, mean: rows[0].km ?? 0 };
 }
@@ -736,7 +800,7 @@ function updateMisfit() {
   }
   const m = spreading ? spreadingMisfit() : misfit();
   box.querySelector('tbody').innerHTML = m.per.map((r) =>
-    `<tr><td>${r.name}</td><td>${r.n}</td><td>${r.km === null ? '&ndash;' : Math.round(r.km)}</td></tr>`).join('');
+    `<tr${r.fitting ? ' class="active"' : ''}><td>${r.name}</td><td>${r.n}</td><td>${r.km === null ? '&ndash;' : Math.round(r.km)}</td></tr>`).join('');
   document.getElementById('misfit-mean').textContent = `${Math.round(m.mean)} km`;
 }
 
@@ -965,6 +1029,7 @@ function updateTable() {
   document.querySelector('#plates tbody').innerHTML = rows.join('');
   document.getElementById('undo').disabled = undoStack.length === 0;
   if (!drag) saveChapter();
+  updateStageButtons();
   if (tree) {
     document.getElementById('table-note').textContent =
       'Each row: the plate\'s rotation relative to the plate it moves with (the mantle, '
@@ -1135,8 +1200,16 @@ function rotationFile(age = reconAge) {
   // same lines rotationAt() interpolates, parents listed first.
   for (const p of treeOrder()) {
     const fixed = p.parent ? p.parent.id : 0;
-    const r = quatToPoleAngle(relativeQ(p));
     out.push(line(p.id, 0, 90, 0, 0, fixed, p.name));
+    if (p.keys) {
+      // One line per fitted age, as GPlates reads them: stages.
+      for (const k of p.keys) {
+        const r = quatToPoleAngle(k.q);
+        out.push(line(p.id, k.age, r.lat, r.lon, r.angle, fixed, `${p.name} (Pangea, fitted)`));
+      }
+      continue;
+    }
+    const r = quatToPoleAngle(relativeQ(p));
     out.push(line(p.id, age, r.lat, r.lon, r.angle, fixed, `${p.name} (Pangea)`));
   }
   return out.join('\n') + '\n';
@@ -1180,12 +1253,12 @@ canvas.addEventListener('pointerdown', (e) => {
   // Right-drag or Alt-drag always turns the globe: an oceanic plate like the Pacific
   // covers so much of it that there may be little open ocean left to grab.
   const plate = e.button === 2 || e.altKey ? null : pick(p);
-  if (plate && shownAge !== reconAge) {
+  if (plate && shownAge !== editAge) {
     // Plates are edited at the reconstruction age only: that is what the saved
     // rotations mean. Grabbing one while scrubbed or playing returns there first, and the
     // grab is taken again from the plate as it is drawn there.
     playing = null;
-    setShownAge(reconAge);
+    setShownAge(editAge);
     draw();
   }
   const grabbed = plate && pick(screenToSphere(e.clientX, e.clientY));
@@ -1349,7 +1422,8 @@ document.getElementById('undo').addEventListener('click', () => {
 document.getElementById('reset').addEventListener('click', () => {
   undoStack.push(snapshot());
   // Positions go back to the start; the links the student drew stay.
-  restore(new Map(plates.map((p) => [p, { q: initialQ.get(p) ?? IDENTITY, parent: p.parent }])));
+  restore(new Map(plates.map((p) => [p, { q: initialQ.get(p) ?? IDENTITY, parent: p.parent,
+    keys: p.keys ? [] : undefined }])));
   active = null;
   updateTable();
   requestDraw();
@@ -1384,7 +1458,7 @@ document.getElementById('ghosts').addEventListener('change', (e) => {
 
 document.getElementById('play').addEventListener('click', () => {
   if (playing) stopPlaying();
-  else playTo(shownAge > 0 ? 0 : reconAge);
+  else playTo(shownAge > 0 ? 0 : editAge);
 });
 
 document.getElementById('scrub').addEventListener('input', (e) => {
@@ -1435,6 +1509,21 @@ async function loadHotspots(chapter) {
   }
 }
 
+/** Which age is being fitted, which have been, and whether we are looking at today. */
+function updateStageButtons() {
+  if (!spreading?.stages) return;
+  const fitted = new Set((spreading.left.keys || []).map((k) => k.age));
+  for (const b of document.querySelectorAll('#stage-row button[data-age]')) {
+    const age = Number(b.dataset.age);
+    b.setAttribute('aria-pressed', String(age > 0 ? Math.abs(age - editAge) < 1e-6 && shownAge > 0 : shownAge <= 0));
+    b.classList.toggle('fitted', fitted.has(age));
+  }
+  const name = spreading.stages.find((st) => Math.abs(st.age - editAge) < 1e-6);
+  document.getElementById('stage-note').textContent = shownAge <= 0
+    ? 'Today: every fitted stage\'s flowlines against the fracture zones.'
+    : `Fitting ${/^\d/.test(name.chron) ? 'C' : ''}${name.chron} (${editAge} Ma): drag South America until the two bold isochrons meet.`;
+}
+
 /** Fracture zones, isochrons and flowline seeds between the chapter's two plates. */
 async function loadSpreading(chapter) {
   const data = await loadJSON(`data/${chapter.spreading.data}`);
@@ -1445,12 +1534,37 @@ async function loadSpreading(chapter) {
     left: plates.find((p) => p.id === chapter.spreading.left),
     right: plates.find((p) => p.id === chapter.spreading.right),
     fzs: data.fractureZones.filter((f) => byMember.has(f.plate))
-      .map((f) => ({ plate: byMember.get(f.plate), seed: f.seed, pts: line(f.line) })),
+      .map((f) => ({ plate: byMember.get(f.plate), seed: f.seed, pts: line(f.line), ages: f.ages })),
     // M0 is 120.4 Ma: keep an isochron within a Myr of the reconstruction age.
     isochrons: data.isochrons.filter((i) => byMember.has(i.plate) && i.age <= reconAge + 1)
       .map((i) => ({ plate: byMember.get(i.plate), age: i.age, chron: i.chron, pts: line(i.line) })),
     seeds: data.seeds.map(([lon, lat]) => lonLatToVec3(lon, lat)),
   };
+  // Fitted one isochron at a time: the moving plate holds a key per fitted age.
+  spreading.left.keys = [];
+  const chrons = new Map();
+  for (const iso of spreading.isochrons) chrons.set(iso.chron, iso.age);
+  spreading.stages = [...chrons].map(([chron, age]) => ({ chron, age })).sort((a, b) => a.age - b.age);
+  editAge = spreading.stages[0].age;
+  const box = document.getElementById('stage-row');
+  box.hidden = false;
+  box.querySelector('.stages').innerHTML = spreading.stages.map((st) =>
+    `<button type="button" data-age="${st.age}" aria-pressed="false">`
+    + `${/^\d/.test(st.chron) ? 'C' : ''}${st.chron}<small>${Math.round(st.age)} Ma</small></button>`).join('')
+    + '<button type="button" data-age="0" class="now" aria-pressed="false">Present<small>check</small></button>';
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-age]');
+    if (!b) return;
+    const age = Number(b.dataset.age);
+    stopPlaying();
+    if (age > 0) {
+      editAge = age;
+      spreading.left.q = keyedAt(spreading.left, editAge);
+    }
+    setShownAge(age);
+    updateStageButtons();
+    updateTable();
+  });
   updateFlowlines();
   const t = chapter.spreading.labels;
   document.getElementById('misfit-title').textContent = t.title;
@@ -1502,6 +1616,7 @@ async function main() {
   reconAge = chapter.reconstructionAge ?? 200;
   shownAge = reconAge;
   if (chapter.view) Object.assign(view, chapter.view);
+  editAge = reconAge;
   document.getElementById('legend-max').textContent = reconAge;
   for (const p of plates) p.parent = null;
   setUpTree(chapter);
@@ -1517,7 +1632,7 @@ async function main() {
   try { saved = localStorage.getItem('pangea:projection'); } catch { /* not available */ }
   setProjection(new URLSearchParams(location.search).get('projection') || saved || 'globe');
   updateTable();
-  setShownAge(reconAge);
+  setShownAge(editAge);
   draw();
 
   // For automated checks: the same state and functions the gestures use, nothing more.
@@ -1525,7 +1640,7 @@ async function main() {
     get plates() { return plates; }, chapter, get projector() { return projector; }, view, setProjection, pick, screenToSphere,
     rotationFile, draw, setShownAge, get shownAge() { return shownAge; },
     get mother() { return mother; }, get pending() { return pending; }, nodeOf, setParent, relativeQ, misfit, rotationAt, hotspots: () => hotspots,
-    spreading: () => spreading, spreadingMisfit,
+    spreading: () => spreading, spreadingMisfit, get editAge() { return editAge; },
     trailCells: () => trailCells,
     rotateByPlate: (id, v) => rotate(plates.find((p) => p.id === id).q, v),
     rotateByPlateShown: (id, v) => rotate(plates.find((p) => p.id === id).shown, v),

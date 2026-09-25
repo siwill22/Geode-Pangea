@@ -15,7 +15,9 @@ Sources:
 
 Fracture-zone vertices are assigned to the plate they are on today (the 0 Ma resolved
 plates), and a trace is split where it crosses from one plate to another; only the parts
-on 201 and 701 are kept.
+on 201 and 701 are kept. Each vertex also gets the seafloor age under it, from the
+Muller 2019 present-day age grid, so the page can show a fracture zone only where its
+seafloor existed at the displayed age.
 
 Flowline seeds are where fracture zones are born: the transform offsets of today's
 ridge, i.e. ridge segments at least MIN_TRANSFORM_KM long running within
@@ -44,12 +46,15 @@ import re
 
 import numpy as np
 import pygplates
+import xarray as xr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 CACHE = os.path.expanduser('~/Library/Caches/gprm')
 FZ_FILE = os.path.join(CACHE, 'SeafloorFabric/GMT/GSFML_SF_FZ_KM.gmt')
 ISOCHRONS = os.path.join(CACHE, 'Seton2012/SETON2012/Seton_etal_ESR2012_Isochrons_2012.1.gpmlz')
+AGE_GRID = os.path.expanduser('~/GIT/ghf/Muller_etal_2019_Tectonics_v2.0_netCDF/'
+                             'Muller_etal_2019_Tectonics_v2.0_AgeGrid-0.nc')
 MODEL = os.path.join(CACHE, 'Muller2019/Muller_etal_2019_PlateMotionModel_v2.0_Tectonics')
 TOPOLOGIES = ['Global_Mesozoic-Cenozoic_PlateBoundaries_2019_v2.gpml',
               'Western_Tethys_Tectonic_Boundary_Topologies_2019_v2.gpml',
@@ -179,6 +184,11 @@ def main():
         record[f['seed']] = record.get(f['seed'], 0) + length_km(f['line'])
     fz_out = [f for f in fz_out if record[f['seed']] >= MIN_RECORD_KM]
     dists = None
+    grid = xr.open_dataset(AGE_GRID)['z']
+    for f in fz_out:
+        lon = xr.DataArray([v[0] for v in f['line']]); lat = xr.DataArray([v[1] for v in f['line']])
+        ages = grid.interp(lon=lon, lat=lat, method='nearest').values
+        f['ages'] = [None if np.isnan(a) else round(float(a), 1) for a in ages]
     used = sorted({f['seed'] for f in fz_out})
     remap = {old: new for new, old in enumerate(used)}
     for f in fz_out:

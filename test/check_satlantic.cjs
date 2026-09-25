@@ -43,7 +43,10 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   check(info.fzs > 50 && info.seeds > 10, `${info.fzs} fracture zones on ${info.seeds} flowlines`);
   check(/M0/.test(info.chrons) && /34/.test(info.chrons), `isochrons ${info.chrons}`);
   const q0 = await q();
-  const m0 = await page.evaluate(() => window.__dragPlates.spreadingMisfit().per[0].km);
+  const stageBtn = (label) => page.click(`#stage-row button:has-text("${label}")`);
+  check(Math.abs(await page.evaluate(() => window.__dragPlates.editAge) - 10.9) < 1e-6
+    && Math.abs(await page.evaluate(() => window.__dragPlates.shownAge) - 10.9) < 1e-6,
+    'opens fitting the youngest isochron, C5, shown at its age');
 
   // Africa is fixed: a drag starting on it turns the globe instead.
   const v0 = await page.evaluate(() => ({ ...window.__dragPlates.view }));
@@ -51,27 +54,38 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   const q1 = await q(), v1 = await page.evaluate(() => ({ ...window.__dragPlates.view }));
   check(q1[701].every((x, i) => x === q0[701][i]) && v1.lon !== v0.lon, 'Africa does not move; the globe turned');
 
-  // Drag South America towards Africa.
-  await dragFrom(await centre(201), 150, 0);
-  const q2 = await q();
-  check(!q2[201].every((x, i) => x === q1[201][i]), 'South America moved');
-  const m1 = await page.evaluate(() => window.__dragPlates.spreadingMisfit().per[0].km);
-  check(m1 !== m0, `fracture-zone misfit responds (${Math.round(m0)} -> ${Math.round(m1)} km)`);
+  // Fit C34 with the real button, then M0.
+  await stageBtn('C34');
+  check(Math.abs(await page.evaluate(() => window.__dragPlates.shownAge) - 83.5) < 1e-6, 'C34 button shows 83.5 Ma');
+  await dragFrom(await centre(201), 120, 0);
+  await stageBtn('M0');
+  await dragFrom(await centre(201), 60, 10);
+  const keys = await page.evaluate(() => window.__dragPlates.plates.find((p) => p.id === 201).keys.map((k) => k.age));
+  check(JSON.stringify(keys) === '[83.5,120.4]', `two fitted stages (${keys})`);
+  check((await page.$$('#stage-row button.fitted')).length === 2, 'both marked as fitted');
 
-  // Branches meet at the displayed age, for every seed.
+  // At each fitted age, every flowline's two branches meet at the ridge.
   const meet = await page.evaluate(() => {
-    const d = window.__dragPlates; d.setShownAge(60); d.spreadingMisfit();
-    const s = d.spreading(), rot = d.rotateByPlateShown;
-    let worst = 0;
-    for (const fl of s.flow) {
-      const a = rot(701, fl[701][60]), b = rot(201, fl[201][60]);
-      worst = Math.max(worst, Math.acos(Math.min(1, a[0]*b[0]+a[1]*b[1]+a[2]*b[2])) * 180 / Math.PI);
+    const d = window.__dragPlates; let worst = 0;
+    for (const age of [83.5, 120.4]) {
+      d.setShownAge(age); d.spreadingMisfit();
+      const s = d.spreading(), i = s.flowAges.indexOf(age), rot = d.rotateByPlateShown;
+      for (const fl of s.flow) {
+        const a = rot(701, fl[701][i]), b = rot(201, fl[201][i]);
+        worst = Math.max(worst, Math.acos(Math.min(1, a[0]*b[0]+a[1]*b[1]+a[2]*b[2])) * 180 / Math.PI);
+      }
     }
     return worst;
   });
-  check(meet < 1e-5, `at 60 Ma every flowline's two branches meet at the ridge (worst ${meet.toExponential(1)} deg)`);
-  await page.screenshot({ path: path.join(out, '1-60Ma.png') });
-  await page.evaluate(() => window.__dragPlates.setShownAge(0));
+  check(meet < 1e-5, `at both fitted ages the two branches of every flowline meet (worst ${meet.toExponential(1)} deg)`);
+
+  // Back to C34: the plate is where it was fitted there.
+  await stageBtn('C34');
+  await page.screenshot({ path: path.join(out, '1-C34.png') });
+  const m = await page.evaluate(() => window.__dragPlates.spreadingMisfit().per);
+  check(m.length === 10 && m[0].km > 0, 'misfit: fracture zones and nine isochrons');
+  await stageBtn('Present');
+  check((await page.evaluate(() => window.__dragPlates.shownAge)) === 0, 'Present shows today');
   await page.screenshot({ path: path.join(out, '2-present.png') });
 
   // Dump for pygplates.
@@ -79,7 +93,7 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
     const d = window.__dragPlates; d.setShownAge(1e9);
     const m = d.spreadingMisfit(), s = d.spreading();
     const ll = (v) => [Math.atan2(v[1], v[0]) * 180 / Math.PI, Math.asin(v[2]) * 180 / Math.PI];
-    return { rot: d.rotationFile(), recon: d.shownAge, misfit: m.per,
+    return { rot: d.rotationFile(), recon: d.shownAge, misfit: m.per, flowAges: s.flowAges,
       seeds: s.seeds.map(ll), flow: s.flow.map((f) => ({ 701: f[701].map(ll), 201: f[201].map(ll) })) };
   });
   fs.writeFileSync(path.join(out, 'satlantic.rot'), dump.rot);

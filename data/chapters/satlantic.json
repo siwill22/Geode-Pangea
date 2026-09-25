@@ -9,7 +9,7 @@
   "show": {
     "crust": true
   },
-  "reconstructionAge": 120,
+  "reconstructionAge": 120.4,
   "fixed": [
     701
   ],
@@ -20,17 +20,17 @@
     "labels": {
       "title": "Seafloor misfit",
       "column": "Line",
-      "note": "Fracture zones: mean distance to your flowlines. Each isochron: the gap left between the two flanks when you bring that age back together."
+      "note": "Each isochron: the gap left between its two flanks at its own age. Fracture zones: mean distance to your flowlines."
     }
   },
   "view": {
     "lon": -15,
     "lat": -15
   },
-  "intro": "The South Atlantic is new seafloor, made at the ridge as South America and Africa pulled apart. Africa stays put; drag South America back to close the ocean 120 million years ago. As you do, the dotted flowlines show the paths your rotation predicts for the seafloor on each side, a disc every 10 Myr in the colour of its age. Fracture zones, the white lines, record the real paths. Make the flowlines run along them, and make the coloured isochrons of each age meet.",
+  "intro": "The South Atlantic is new seafloor, made at the ridge as South America and Africa pulled apart. Isochrons are seafloor of one age, found on both flanks. Pick an isochron: the globe shows the ocean as it was then, and you drag South America (Africa stays put) until the two bold isochrons of that age meet. Fit them one by one, oldest last. Then look at Present: your rotations predict flowlines, and the fracture zones (white) show where the seafloor really went.",
   "questions": [
-    "Close the ocean so that the M0 isochrons (120 Ma) on the two flanks meet. Do the fracture zones follow your flowlines?",
-    "Scrub back to 84 Ma. Do the two C34 isochrons meet too? What does that say about one steady rotation?",
-    "Why do fracture zones record the direction of spreading, but isochrons its amount?"
+    "Fit C34 (84 Ma), then M0 (120 Ma). Does South America move the same way in both stages?",
+    "At Present, do your flowlines follow the fracture zones? Where do they bend, and why?",
+    "What would the flowlines look like with only one fitted isochron?"
   ]
 }

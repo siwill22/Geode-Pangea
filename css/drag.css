@@ -255,3 +255,12 @@ canvas.linking, canvas.linking.over-plate { cursor: crosshair; }
 .legend .fz { flex: none; width: 1.1rem; height: 2px; background: rgba(236, 242, 250, 0.9); }
 .legend .iso { flex: none; width: 1.1rem; height: 3px; background: linear-gradient(90deg, #fe9f6d, #b73779); }
 .legend .dot.small { width: 0.55rem; height: 0.55rem; }
+
+/* Isochron picker (South Atlantic). */
+.stage-row .stages { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0 0 0.4rem; }
+.stage-row button { padding: 0.2rem 0.45rem; font-size: 0.78rem; line-height: 1.15; display: inline-flex; flex-direction: column; align-items: center; }
+.stage-row button small { font-size: 0.62rem; color: var(--muted); }
+.stage-row button[aria-pressed="true"] { background: rgba(143, 212, 240, 0.28); border-color: var(--accent); }
+.stage-row button.fitted::after { content: "\2713"; font-size: 0.6rem; color: #7fe0a0; }
+.stage-row button.now { margin-left: auto; }
+.stage-row .note { margin: 0 0 0.6rem; }

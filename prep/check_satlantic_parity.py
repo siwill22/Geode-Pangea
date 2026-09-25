@@ -28,7 +28,7 @@ data = json.load(open(os.path.join(REPO, 'data', 'satlantic.json')))
 model = pygplates.RotationModel(os.path.join(out_dir, 'satlantic.rot'))
 SA, AF, R = 201, 701, 6371.0
 T = float(d['recon'])
-times = [float(t) for t in range(0, int(T) + 1)]
+times = [float(t) for t in d['flowAges']]
 failed = False
 
 
@@ -78,7 +78,7 @@ for iso in data['isochrons']:
 for chron, c in sorted(chrons.items(), key=lambda kv: kv[1]['age']):
     if not c[SA] or not c[AF]:
         continue
-    rot = model.get_rotation(min(c['age'], T), SA, 0, AF)
+    rot = model.get_rotation(c['age'], SA, 0, AF)
     ds = []
     for line in c[SA]:
         for p in line.get_points():
