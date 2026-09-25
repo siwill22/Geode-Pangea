@@ -229,3 +229,8 @@ canvas.linking, canvas.linking.over-plate { cursor: crosshair; }
 .misfit.collapsed .chev { transform: rotate(-90deg); }
 .misfit.collapsed #misfit-body { display: none; }
 .misfit.collapsed h2 { margin: 0; }
+
+/* Globe / Map switch. */
+.segmented { display: inline-flex; border: 1px solid rgba(143, 212, 240, 0.35); border-radius: 6px; overflow: hidden; }
+.segmented button { border: 0; border-radius: 0; padding: 0.3rem 0.8rem; background: transparent; }
+.segmented button[aria-pressed="true"] { background: rgba(143, 212, 240, 0.25); color: var(--ink); }

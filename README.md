@@ -109,8 +109,10 @@ The two agree to about 1e-4° (the rounding in the `.rot` file).
 
 ## Vendored code
 
-`vendor/petrify/` is a copy of five modules from
-[petrify](https://github.com/siwill22/petrify) (`polygons`, `orthographic`, `sphere`,
-`rotations`, `polyline`). This viewer needs its `PolygonLayer.setRotations()`, the
+`vendor/petrify/` is a copy of six modules from
+[petrify](https://github.com/siwill22/petrify) (`polygons`, `orthographic`, `robinson`,
+`sphere`, `rotations`, `polyline`). The map view (`js/flatmap.js`) adds to petrify's
+Robinson projector the screen-to-sphere inverse and filling of rings that cross the
+map's edge, which petrify only outlines. This viewer needs its `PolygonLayer.setRotations()`, the
 `quat*` gesture helpers and the spherical ring functions (petrify v0.16.0), plus
 `ringBoundingCap` (not yet released).

@@ -22,6 +22,7 @@
 import { PolygonLayer } from '../vendor/petrify/polygons.js';
 import { Orthographic } from '../vendor/petrify/orthographic.js';
 import { tracePolyline } from '../vendor/petrify/polyline.js';
+import { RobinsonMap } from './flatmap.js';
 import {
   DEG, lonLatToVec3, tangentFrame, ringSignedArea, ringContains, ringCentroid,
   ringBoundingCap,
@@ -35,7 +36,13 @@ const IDENTITY = [0, 0, 0, 1];
 
 const canvas = document.getElementById('globe');
 const ctx = canvas.getContext('2d');
-const projector = new Orthographic();
+// Two views of the same sphere: a globe (Orthographic) and a whole-world map (Robinson).
+// `projector` is whichever is showing; everything that edits plates works on the sphere,
+// so only drawing and the screen -> sphere step depend on it.
+const globe = new Orthographic();
+const worldMap = new RobinsonMap();
+let projector = globe;
+const flat = () => projector === worldMap;
 const view = { lon: 10, lat: 15 };
 
 /** @type {{name: string, id: number, colour: string, layer: PolygonLayer,
@@ -184,6 +191,7 @@ const north = [0, 0, 0];
  */
 function screenToSphere(clientX, clientY, clamp = false) {
   const rect = canvas.getBoundingClientRect();
+  if (flat()) return worldMap.unproject(clientX - rect.left, clientY - rect.top, clamp);
   let dx = (clientX - rect.left - projector.cx) / projector.radius;
   let dy = -(clientY - rect.top - projector.cy) / projector.radius;
   let rho2 = dx * dx + dy * dy;
@@ -369,9 +377,18 @@ function resize() {
   const panel = document.getElementById('panel').getBoundingClientRect();
   const wide = innerWidth > 900;
   const left = wide ? panel.right : 0;
-  projector.cx = (left + innerWidth) / 2;
-  projector.cy = wide ? innerHeight / 2 : innerHeight * 0.6;
-  projector.radius = Math.min(innerWidth - left, innerHeight) * 0.44;
+  globe.cx = (left + innerWidth) / 2;
+  globe.cy = wide ? innerHeight / 2 : innerHeight * 0.6;
+  globe.radius = Math.min(innerWidth - left, innerHeight) * 0.44;
+
+  // The map at one fixed scale: as large as fits beside the panel and above the time
+  // bar. Robinson is 2 KX pi wide by 2 KY tall at unit radius.
+  const bar = document.getElementById('timebar').getBoundingClientRect();
+  const top = wide ? 16 : innerHeight * 0.3, bottom = (bar.top || innerHeight) - 16;
+  const w = innerWidth - left - 32, h = bottom - top;
+  worldMap.radius = Math.max(40, Math.min(w / (2 * 0.8487 * Math.PI), h / (2 * 1.3523)));
+  worldMap.cx = (left + innerWidth) / 2;
+  worldMap.cy = (top + bottom) / 2;
 }
 
 /** Stroke a run of unit vectors, lifting the pen behind the horizon. */
@@ -379,7 +396,8 @@ function strokeSphereLine(points, style, width, dash = []) {
   const xyz = Float64Array.from(points.flat());
   ctx.save();
   ctx.beginPath();
-  tracePolyline(ctx, (v) => projector.project(v), xyz, 0, points.length);
+  tracePolyline(ctx, (v) => projector.project(v), xyz, 0, points.length,
+    { seam: projector.seamSplit ? (a, b) => projector.seamSplit(a, b) : null });
   ctx.strokeStyle = style;
   ctx.lineWidth = width;
   ctx.setLineDash(dash);
@@ -581,19 +599,23 @@ function draw() {
   ctx.clearRect(0, 0, innerWidth, innerHeight);
 
   ctx.beginPath();
-  ctx.arc(projector.cx, projector.cy, projector.radius, 0, 2 * Math.PI);
+  if (flat()) worldMap.traceOutline(ctx);
+  else ctx.arc(projector.cx, projector.cy, projector.radius, 0, 2 * Math.PI);
   ctx.fillStyle = '#0d1b2e';
   ctx.fill();
   ctx.strokeStyle = 'rgba(143, 212, 240, 0.3)';
   ctx.lineWidth = 1;
   ctx.stroke();
+  // On the map, nothing is drawn outside its outline.
+  ctx.save();
+  if (flat()) { ctx.beginPath(); worldMap.traceOutline(ctx); ctx.clip(); }
 
   drawGraticule();
   if (showGhosts) {
     for (const p of plates) {
       if (p.q === (initialQ.get(p) ?? IDENTITY)) continue;
-      if (showCrust || p.oceanic) p.ghostCrust.draw(ctx, projector);
-      else clipTo(p.ghostCrust, () => p.ghostLand.draw(ctx, projector));
+      if (showCrust || p.oceanic) drawLayer(p.ghostCrust);
+      else clipTo(p.ghostCrust, () => drawLayer(p.ghostLand));
     }
   }
   drawTrailCells();
@@ -601,6 +623,7 @@ function draw() {
   drawHotspots();
   drawTree();
   drawActiveRotation();
+  ctx.restore();
 }
 
 // ---- The rotation tree, drawn ----------------------------------------------------------
@@ -694,15 +717,59 @@ function setPending(p) {
 
 /** Draw a plate: its crust (in chapters that show it), then its land, clipped to its crust. */
 function drawPlate(p) {
-  if (showCrust || p.oceanic) p.crustLayer.draw(ctx, projector);
-  clipTo(p.crustLayer, () => p.landLayer.draw(ctx, projector));
+  if (showCrust || p.oceanic) drawLayer(p.crustLayer);
+  clipTo(p.crustLayer, () => drawLayer(p.landLayer));
+}
+
+/** Live rings of a layer, as [offset, count]. */
+function liveRings(layer) {
+  return layer.rings.filter((r) => layer.isLive(r, layer.currentTime));
+}
+
+/**
+ * Draw a layer. On the globe, petrify does it. On the map, rings are filled by
+ * RobinsonMap.traceRingFill, which copes with a ring crossing the map's edge, and
+ * outlined by tracePolyline with the seam split, so no outline is drawn along the cut.
+ */
+function drawLayer(layer) {
+  if (!flat()) { layer.draw(ctx, projector); return; }
+  if (!layer.visible || layer.currentTime == null) return;
+  const { fill, stroke, lineWidth, outline } = layer.options;
+  const rings = liveRings(layer);
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  if (!outline && fill) {
+    ctx.beginPath();
+    for (const r of rings) worldMap.traceRingFill(ctx, layer.xyz, r.offset, r.count);
+    ctx.fillStyle = fill;
+    ctx.fill('nonzero');
+  }
+  if (stroke) {
+    const seam = (a, b) => worldMap.seamSplit(a, b);
+    ctx.beginPath();
+    for (const r of rings) {
+      tracePolyline(ctx, (w) => worldMap.project(w), layer.xyz, r.offset, r.count, { closed: true, seam });
+    }
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /** Run `fn` with the canvas clipped to a layer's filled rings, as currently projected. */
 function clipTo(layer, fn) {
-  const { fillable } = layer.projectRings(projector);
   ctx.save();
   ctx.beginPath();
+  if (flat()) {
+    for (const r of liveRings(layer)) worldMap.traceRingFill(ctx, layer.xyz, r.offset, r.count);
+    ctx.clip('nonzero');
+    fn();
+    ctx.restore();
+    return;
+  }
+  const { fillable } = layer.projectRings(projector);
   for (const buf of fillable) {
     ctx.moveTo(buf[0], buf[1]);
     for (let i = 2; i < buf.length; i += 2) ctx.lineTo(buf[i], buf[i + 1]);
@@ -748,7 +815,6 @@ function updateTable() {
       + `<td>${fmt(r.angle)}&deg;</td></tr>`;
   });
   document.getElementById('th-parent').hidden = !tree;
-  document.body.classList.toggle('tree', tree);   // a wider panel, for the extra column
   document.querySelector('#plates tbody').innerHTML = rows.join('');
   document.getElementById('undo').disabled = undoStack.length === 0;
   if (!drag) saveChapter();
@@ -1010,10 +1076,7 @@ canvas.addEventListener('pointermove', (e) => {
     // A press on the ocean that moves becomes a turn of the globe.
     if (!drag.from && (drag.orbiting || Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 4)) {
       drag.orbiting = true;
-      const scale = 90 / projector.radius;
-      view.lon -= (e.clientX - drag.x) * scale;
-      view.lat = Math.max(-89.9, Math.min(89.9, view.lat + (e.clientY - drag.y) * scale));
-      requestDraw();
+      turnView(e.clientX - drag.x, e.clientY - drag.y);
     }
     drag.x = e.clientX;
     drag.y = e.clientY;
@@ -1025,12 +1088,9 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
   if (drag.mode === 'orbit') {
-    const scale = 90 / projector.radius;
-    view.lon -= (e.clientX - drag.x) * scale;
-    view.lat = Math.max(-89.9, Math.min(89.9, view.lat + (e.clientY - drag.y) * scale));
+    turnView(e.clientX - drag.x, e.clientY - drag.y);
     drag.x = e.clientX;
     drag.y = e.clientY;
-    requestDraw();
     return;
   }
 
@@ -1055,6 +1115,53 @@ canvas.addEventListener('pointermove', (e) => {
   updateTable();
   requestDraw();
 });
+
+/**
+ * Turn the view by a pointer movement in px. The globe turns both ways; the map, at one
+ * fixed scale, only slides its central meridian, so a sideways drag moves the map with
+ * the pointer and a vertical one does nothing.
+ */
+function turnView(dx, dy) {
+  if (flat()) {
+    view.lon = wrapLon(view.lon - dx * 360 / (2 * 0.8487 * Math.PI * worldMap.radius));
+  } else {
+    const scale = 90 / projector.radius;
+    view.lon -= dx * scale;
+    view.lat = Math.max(-89.9, Math.min(89.9, view.lat + dy * scale));
+  }
+  requestDraw();
+}
+const wrapLon = (lon) => ((lon + 180) % 360 + 360) % 360 - 180;
+
+// On the map, sideways scrolling (a trackpad swipe, Shift + wheel) slides the centre.
+canvas.addEventListener('wheel', (e) => {
+  if (!flat()) return;
+  const dx = e.deltaX || (e.shiftKey ? e.deltaY : 0);
+  if (!dx) return;
+  e.preventDefault();
+  turnView(-dx, 0);
+}, { passive: false });
+
+/** Switch between globe and map; remembered in this browser, as a convenience. */
+function setProjection(name) {
+  projector = name === 'map' ? worldMap : globe;
+  document.body.classList.toggle('flat', flat());
+  for (const b of document.querySelectorAll('[data-projection]')) {
+    b.setAttribute('aria-pressed', String(b.dataset.projection === name));
+  }
+  try { localStorage.setItem('pangea:projection', name); } catch { /* not available */ }
+  document.getElementById('hint-view').textContent = flat()
+    ? 'Drag the ocean sideways, or scroll sideways, to slide the map.'
+    : 'Drag the ocean to turn the globe.';
+  canvas.setAttribute('aria-label', flat()
+    ? 'World map. Drag a continent to move it; drag the ocean sideways to slide the map.'
+    : 'Globe. Drag a continent to move it; drag the ocean to turn the globe.');
+  resize();
+  requestDraw();
+}
+for (const b of document.querySelectorAll('[data-projection]')) {
+  b.addEventListener('click', () => setProjection(b.dataset.projection));
+}
 
 function endDrag(e) {
   if (drag?.mode === 'link') {
@@ -1151,6 +1258,7 @@ document.getElementById('export').addEventListener('click', () => {
 function setUpTree(chapter) {
   if (!chapter.tree) return;
   mother = plates.find((p) => p.id === chapter.tree.mother);
+  document.body.classList.add('tree');   // a wider panel, for the "moves with" column
   document.getElementById('link-row').hidden = false;
   for (const [child, parent] of chapter.tree.links || []) {
     setParent(plates.find((p) => p.id === child), plates.find((p) => p.id === parent));
@@ -1226,13 +1334,16 @@ async function main() {
   for (const p of plates) showPlate(p);
   resize();
   addEventListener('resize', () => { resize(); draw(); });
+  let saved = null;
+  try { saved = localStorage.getItem('pangea:projection'); } catch { /* not available */ }
+  setProjection(new URLSearchParams(location.search).get('projection') || saved || 'globe');
   updateTable();
   setShownAge(reconAge);
   draw();
 
   // For automated checks: the same state and functions the gestures use, nothing more.
   window.__dragPlates = {
-    get plates() { return plates; }, chapter, projector, view, pick, screenToSphere,
+    get plates() { return plates; }, chapter, get projector() { return projector; }, view, setProjection, pick, screenToSphere,
     rotationFile, draw, setShownAge, get shownAge() { return shownAge; },
     get mother() { return mother; }, get pending() { return pending; }, nodeOf, setParent, relativeQ, misfit, rotationAt, hotspots: () => hotspots,
     trailCells: () => trailCells,

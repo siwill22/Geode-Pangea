@@ -21,7 +21,7 @@
   <ol class="questions" id="questions"></ol>
   <p class="hint">
     Drag a continent to move it over the sphere. <kbd>Shift</kbd>-drag, or switch on
-    <em>Twist</em>, to spin it about its own centre. Drag the ocean to turn the globe.
+    <em>Twist</em>, to spin it about its own centre. <span id="hint-view">Drag the ocean to turn the globe.</span>
   </p>
 
   <div id="carry-row" class="carry" hidden>
@@ -56,6 +56,12 @@
     seafloor along each chain, coloured by its interpolated age</span>
   </div>
 
+  <div class="row">
+    <span class="segmented" role="group" aria-label="View">
+      <button type="button" data-projection="globe" aria-pressed="true">Globe</button>
+      <button type="button" data-projection="map" aria-pressed="false">Map</button>
+    </span>
+  </div>
   <div class="row">
     <label class="toggle"><input type="checkbox" id="twist"> Twist</label>
     <label class="toggle"><input type="checkbox" id="ghosts" checked> Present-day outlines</label>

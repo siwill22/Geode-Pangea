@@ -54,6 +54,8 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   }
   const link = (child, parent) => page.selectOption(`select.parent[data-id="${child}"]`, String(parent));
 
+  // Fold the misfit box, as a student would, so it covers no plate near the top right.
+  await page.click('#misfit-toggle');
   check((await page.evaluate(() => window.__dragPlates.mother.name)) === 'Africa', 'Africa is the mother plate');
   check(Object.values(await parents()).every((x) => x === 0), 'every plate starts linked to the mantle');
 
