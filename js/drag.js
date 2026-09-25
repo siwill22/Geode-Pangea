@@ -29,7 +29,7 @@ import {
 } from '../vendor/petrify/sphere.js';
 import {
   quatToMat3, mat3Apply, quatMultiply, quatConjugate, quatFromAxisAngle, quatSlerp,
-  quatBetween, quatToPoleAngle,
+  quatBetween, quatToPoleAngle, quatFromPoleAngle,
 } from '../vendor/petrify/rotations.js';
 
 const IDENTITY = [0, 0, 0, 1];
@@ -778,7 +778,105 @@ function drawSpreading() {
       });
     }
   }
+  // The rate curves' seeds, where the ridge is at the age shown, ringed in their colours.
+  spreading.rateSeeds.forEach((k, j) => {
+    const p = projector.project(rotate(spreading.right.shown, spreading.flow[k][spreading.right.id][first]));
+    if (!p) return;
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 7, 0, 2 * Math.PI);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = RATE_COLOURS[j];
+    ctx.stroke();
+  });
 }
+
+/*
+ * Spreading rates. Between two sample ages a flowline's point on each flank moves apart
+ * by a great-circle distance; with rigid plates those present-day distances are the half
+ * spreading on each side, so their sum over the time step is the full rate (km/Myr =
+ * mm/yr). Within one fitted stage the rate is constant, so each curve is a step. Four
+ * seeds, spaced along the ridge from north to south, each marked on the globe.
+ */
+const RATE_COLOURS = ['#3987e5', '#199e70', '#9085e9', '#c98500'];   // validated on the dark panel
+const RATE_LATS = [10, -10, -30, -45];
+
+function spreadingRates() {
+  const ages = spreading.flowAges, R = 6371;
+  const arc = (a, b) => Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])));
+  return spreading.rateSeeds.map((k) => {
+    const fl = spreading.flow[k], L = fl[spreading.left.id], Rt = fl[spreading.right.id];
+    const steps = [];
+    for (let i = 1; i < ages.length; i++) {
+      const dt = ages[i] - ages[i - 1];
+      if (dt <= 0) continue;
+      steps.push({ from: ages[i - 1], to: ages[i], rate: (arc(L[i - 1], L[i]) + arc(Rt[i - 1], Rt[i])) * R / dt });
+    }
+    return steps;
+  });
+}
+
+let rateHover = null;
+function updateRates() {
+  const box = document.getElementById('rates');
+  if (!spreading?.rateSeeds) { box.hidden = true; return; }
+  box.hidden = false;
+  if (box.classList.contains('collapsed')) return;
+  const rates = spreadingRates();
+  const svg = document.getElementById('rates-plot');
+  const W = svg.clientWidth || 280, H = 150, ml = 26, mr = 6, mt = 6, mb = 18;
+  const top = Math.max(20, Math.ceil(Math.max(...rates.flat().map((s) => s.rate)) / 20) * 20);
+  const x = (a) => ml + (a / reconAge) * (W - ml - mr), y = (r) => H - mb - (r / top) * (H - mt - mb);
+  let out = '';
+  const yStep = top > 100 ? 40 : 20;
+  for (let r = 0; r <= top; r += yStep) {
+    out += `<line class="grid" x1="${ml}" x2="${W - mr}" y1="${y(r)}" y2="${y(r)}"/>`
+      + `<text x="${ml - 4}" y="${y(r) + 3}" text-anchor="end">${r}</text>`;
+  }
+  for (let a = 0; a <= reconAge; a += 20) out += `<text x="${x(a)}" y="${H - 4}" text-anchor="middle">${a}</text>`;
+  out += `<line class="axis" x1="${ml}" x2="${W - mr}" y1="${y(0)}" y2="${y(0)}"/>`;
+  // The age being fitted, and the age shown if it differs.
+  if (shownAge > 0) out += `<line x1="${x(editAge)}" x2="${x(editAge)}" y1="${mt}" y2="${y(0)}" stroke="rgba(240,246,252,0.5)" stroke-dasharray="3 3"/>`;
+  rates.forEach((steps, k) => {
+    let d = '';
+    for (const s of steps) d += `${d ? 'L' : 'M'}${x(s.from).toFixed(1)},${y(s.rate).toFixed(1)}L${x(s.to).toFixed(1)},${y(s.rate).toFixed(1)}`;
+    out += `<path d="${d}" fill="none" stroke="${RATE_COLOURS[k]}" stroke-width="2" stroke-linejoin="round"/>`;
+  });
+  if (rateHover != null) {
+    const a = rateHover;
+    out += `<line x1="${x(a)}" x2="${x(a)}" y1="${mt}" y2="${y(0)}" stroke="rgba(240,246,252,0.8)"/>`;
+    const at = rates.map((steps) => steps.find((s) => a >= s.from && a < s.to) || steps[steps.length - 1]);
+    at.forEach((s, k) => { out += `<circle cx="${x(a)}" cy="${y(s.rate)}" r="3.5" fill="${RATE_COLOURS[k]}" stroke="#0b1422" stroke-width="1.5"/>`; });
+    document.getElementById('rates-readout').textContent = `${a.toFixed(0)} Ma: `
+      + at.map((s, k) => `${spreading.rateLabels[k]} ${Math.round(s.rate)}`).join(' · ') + ' mm/yr';
+  } else {
+    document.getElementById('rates-readout').textContent = 'Hover the plot to read the rates at an age.';
+  }
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = out;
+  spreading.rateGeom = { ml, mr, W };
+}
+
+document.getElementById('rates-plot').addEventListener('pointermove', (e) => {
+  const g = spreading?.rateGeom;
+  if (!g) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  const f = (e.clientX - r.left - g.ml) / (r.width - g.ml - g.mr);
+  rateHover = Math.max(0, Math.min(reconAge - 0.001, f * reconAge));
+  updateRates();
+});
+document.getElementById('rates-plot').addEventListener('pointerleave', () => { rateHover = null; updateRates(); });
+document.getElementById('rates-toggle').addEventListener('click', () => {
+  const box = document.getElementById('rates'), open = box.classList.toggle('collapsed') === false;
+  document.getElementById('rates-toggle').setAttribute('aria-expanded', String(open));
+  try { localStorage.setItem('pangea:rates-open', open ? '1' : '0'); } catch { /* not available */ }
+  updateRates();
+});
+try {
+  if (localStorage.getItem('pangea:rates-open') === '0') {
+    document.getElementById('rates').classList.add('collapsed');
+    document.getElementById('rates-toggle').setAttribute('aria-expanded', 'false');
+  }
+} catch { /* not available */ }
 
 /** Recompute the synthetic flowlines (after any change to the rotations). */
 function updateFlowlines() {
@@ -848,6 +946,7 @@ function updateMisfit() {
   // is refreshed at most five times a second; it is recomputed in full on release.
   if (spreading) {
     updateFlowlines();
+    updateRates();
     const now = performance.now();
     if (drag && now - lastMisfitAt < 200) return;
     lastMisfitAt = now;
@@ -1601,6 +1700,16 @@ async function loadSpreading(chapter) {
       .map((i) => ({ plate: byMember.get(i.plate), age: i.age, chron: i.chron, pts: line(i.line) })),
     seeds: data.seeds.map(([lon, lat]) => lonLatToVec3(lon, lat)),
   };
+  // The rate curves' seeds: the one nearest each of RATE_LATS.
+  const lat = (v) => Math.asin(v[2]) * 180 / Math.PI;
+  spreading.rateSeeds = RATE_LATS.map((target) => spreading.seeds.reduce((best, v, i) =>
+    Math.abs(lat(v) - target) < Math.abs(lat(spreading.seeds[best]) - target) ? i : best, 0));
+  spreading.rateLabels = spreading.rateSeeds.map((i) => {
+    const l = Math.round(lat(spreading.seeds[i]));
+    return `${Math.abs(l)}°${l >= 0 ? 'N' : 'S'}`;
+  });
+  document.getElementById('rates-legend').innerHTML = spreading.rateLabels.map((t, k) =>
+    `<li><i style="background:${RATE_COLOURS[k]}"></i>${t}</li>`).join('');
   // Fitted one isochron at a time: the moving plate holds a key per fitted age.
   spreading.left.keys = [];
   const chrons = new Map();
@@ -1702,7 +1811,13 @@ async function main() {
     get plates() { return plates; }, chapter, get projector() { return projector; }, view, setProjection, pick, screenToSphere,
     rotationFile, draw, setShownAge, get shownAge() { return shownAge; },
     get mother() { return mother; }, get pending() { return pending; }, nodeOf, setParent, relativeQ, misfit, rotationAt, hotspots: () => hotspots,
-    spreading: () => spreading, spreadingMisfit, get editAge() { return editAge; },
+    spreading: () => spreading, spreadingMisfit, spreadingRates, get editAge() { return editAge; },
+    // Set a plate's fitted stages directly, as (age, pole lon, pole lat, angle) rows.
+    setKeys(id, rows) {
+      const p = plates.find((x) => x.id === id);
+      p.keys = rows.map(([age, lon, lat, angle]) => ({ age, q: quatFromPoleAngle(lon, lat, angle) }));
+      p.q = keyedAt(p, editAge); showPlate(p); updateTable(); requestDraw();
+    },
     trailCells: () => trailCells,
     rotateByPlate: (id, v) => rotate(plates.find((p) => p.id === id).q, v),
     rotateByPlateShown: (id, v) => rotate(plates.find((p) => p.id === id).shown, v),

@@ -104,6 +104,19 @@
   </div>
 </aside>
 
+<aside class="misfit rates" id="rates" hidden>
+  <h2>
+    <button type="button" id="rates-toggle" class="misfit-toggle" aria-expanded="true" aria-controls="rates-body">
+      <span class="chev" aria-hidden="true">&#9662;</span> Full spreading rate, mm/yr, by age (Ma)
+    </button>
+  </h2>
+  <div id="rates-body">
+    <ul class="rates-legend" id="rates-legend"></ul>
+    <svg id="rates-plot" role="img" aria-label="Full spreading rate against age at four places along the ridge"></svg>
+    <p class="note rates-readout" id="rates-readout" aria-live="polite"></p>
+  </div>
+</aside>
+
 <div class="timebar" id="timebar">
   <span class="segmented" role="group" aria-label="View">
     <button type="button" data-projection="globe" aria-pressed="true">Globe</button>

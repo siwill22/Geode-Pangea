@@ -125,6 +125,8 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   fs.writeFileSync(path.join(out, 'satlantic.rot'), dump.rot);
   fs.writeFileSync(path.join(out, 'satlantic.json'), JSON.stringify(dump));
 
+  check(await page.evaluate(() => !document.getElementById('rates').hidden
+    && document.querySelectorAll('#rates-plot path').length === 4), 'spreading-rate plot: four curves');
   check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join('; ') : ''}`);
   await browser.close();
   console.log(failures ? `${failures} FAILED` : 'all passed');
