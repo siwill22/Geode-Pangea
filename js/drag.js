@@ -46,7 +46,7 @@ let showGhosts = true;
 let showCrust = false;     // set by the chapter
 const undoStack = [];      // Map(plate -> q) of every plate, as it was before each change
 let initialQ = new Map();  // the chapter's starting rotations, for Reset
-let anchor = null;         // the anchor plate, in chapters that have one (else null)
+let mother = null;         // the root of the rotation tree, in chapters that build one (else null)
 let trailCells = [];       // [{ v, age, colour, plate }]: dated hotspot-chain seafloor, where shown
 let trailCellDeg = 1 / 6;
 let hotspots = [];         // [{ name, h, samples: [{ v, age, plate }] }] in chapters that show them
@@ -235,27 +235,60 @@ function setPlateRotation(plate, q) {
 }
 
 /*
+ * The rotation tree. Every plate has a parent (another plate) or none, in which case it
+ * is fixed to the mantle (plate 000). Its saved rotation q is always its total rotation
+ * at the reconstruction age; its rotation RELATIVE to its parent is
+ *
+ *     r_P = q_parent^-1 q_P
+ *
+ * and that, not q, is what a line of the rotation file holds and what the table shows.
+ */
+function relativeQ(plate) {
+  return plate.parent ? quatMultiply(quatConjugate(plate.parent.q), plate.q) : plate.q;
+}
+
+/** Plates carried by `plate`: its children, their children, and so on. */
+function descendants(plate) {
+  return plates.filter((p) => { for (let a = p.parent; a; a = a.parent) if (a === plate) return true; return false; });
+}
+
+/** Parents before children, so a file lists every plate after the plate it moves with. */
+function treeOrder() {
+  const depth = (p) => (p.parent ? 1 + depth(p.parent) : 0);
+  return [...plates].sort((a, b) => depth(a) - depth(b) || (b === mother) - (a === mother) || a.id - b.id);
+}
+
+/*
  * A plate's rotation at any age between present day and the reconstruction age.
  *
- * With no anchor, each plate turns about its own saved pole: a slerp from the identity to
- * its saved rotation q. With an anchor A, the anchor does that, and every other plate
- * turns about its pole RELATIVE to A (r = qA^-1 q) while being carried along by A:
+ * Each plate turns about its own pole relative to its parent -- a slerp from the
+ * identity to r_P -- while being carried along by its parent's rotation at that age:
  *
- *     R_A(t) = slerp(I, qA, f)          R_P(t) = R_A(t) * slerp(I, qA^-1 qP, f)
+ *     R_P(t) = R_parent(t) * slerp(I, r_P, f),     f = age / reconAge
  *
- * with f = age / reconAge. That is how GPlates interpolates a rotation hierarchy (each
- * line of the file separately, then composed), so what plays here is what the exported
- * file describes. At the reconstruction age every plate is at q whatever the anchor; in
- * between, the anchor changes the path -- and so the shape of every hotspot trail.
+ * and so on up the tree. That is how GPlates interpolates a rotation hierarchy (each line
+ * of the file separately, then composed), so what plays here is what the exported file
+ * describes. At the reconstruction age every plate is at q whatever the tree; in between,
+ * the tree decides the path -- and so the shape of every hotspot trail.
  */
 function rotationAt(plate, age) {
   if (age >= reconAge) return plate.q;
   if (age <= 0) return IDENTITY;
-  const f = age / reconAge;
-  if (!anchor) return quatSlerp(IDENTITY, plate.q, f);
-  const carry = quatSlerp(IDENTITY, anchor.q, f);
-  if (plate === anchor) return carry;
-  return quatMultiply(carry, quatSlerp(IDENTITY, quatMultiply(quatConjugate(anchor.q), plate.q), f));
+  const own = quatSlerp(IDENTITY, relativeQ(plate), age / reconAge);
+  return plate.parent ? quatMultiply(rotationAt(plate.parent, age), own) : own;
+}
+
+/**
+ * Link `plate` to a new parent (or to none). Nothing moves at the reconstruction age --
+ * q stays, and the relative rotation is re-expressed -- but every path in between may.
+ * Refused, returning false, if it would make a loop.
+ */
+function setParent(plate, parent) {
+  if (plate === mother && parent) return false;
+  if (parent && (parent === plate || descendants(plate).includes(parent))) return false;
+  plate.parent = parent;
+  for (const p of plates) showPlate(p);
+  return true;
 }
 
 function showPlate(plate) {
@@ -265,13 +298,14 @@ function showPlate(plate) {
   for (const layer of plate.layers) layer.setRotations({ [plate.id]: plate.shown }, shownAge);
 }
 
-/** Every plate's saved rotation, for undo. */
+/** Every plate's saved rotation and parent, for undo. */
 function snapshot() {
-  return new Map(plates.map((p) => [p, p.q]));
+  return new Map(plates.map((p) => [p, { q: p.q, parent: p.parent }]));
 }
 
 function restore(snap) {
-  for (const [p, q] of snap) { p.q = q; showPlate(p); }
+  for (const [p, s] of snap) { p.q = s.q; p.parent = s.parent; }
+  for (const p of plates) showPlate(p);
 }
 
 function setShownAge(age) {
@@ -366,8 +400,9 @@ function drawGraticule() {
 
 /**
  * The active plate's motion, drawn: the path its centre takes from present day to the
- * reconstruction age, and the pole of its saved rotation. With no anchor the path is a
- * small circle about that pole; with one, it is whatever the hierarchy makes it.
+ * reconstruction age, and the pole of its saved rotation. For a plate that moves with
+ * nothing the path is a small circle about that pole; otherwise it is whatever the
+ * rotation tree makes it.
  */
 function drawActiveRotation() {
   if (!active) return;
@@ -596,27 +631,52 @@ function requestDraw() {
 const fmt = (x, d = 1) => (Math.abs(x) < 0.05 ? 0 : x).toFixed(d);
 
 function updateTable() {
+  const tree = !!mother;
+  const byName = [...plates].sort((a, b) => a.name.localeCompare(b.name));
   const rows = [...plates].sort((a, b) => a.id - b.id).map((p) => {
-    // With an anchor, each plate's own rotation is relative to it; the anchor's is absolute.
-    const r = quatToPoleAngle(anchor && p !== anchor ? quatMultiply(quatConjugate(anchor.q), p.q) : p.q);
+    // Each row is the plate's rotation relative to its parent, or to the mantle if none.
+    const r = quatToPoleAngle(relativeQ(p));
     const moved = r.angle > 1e-6;
     const cls = [p === active ? 'active' : '', moved ? 'moved' : ''].join(' ').trim();
+    let link = '';
+    if (tree) {
+      link = p === mother ? '<td><span class="tag">mother</span></td>'
+        : `<td><select class="parent" data-id="${p.id}" aria-label="${p.name} moves with">`
+          + `<option value="0"${p.parent ? '' : ' selected'}>mantle</option>`
+          + byName.filter((x) => x !== p && !descendants(p).includes(x)).map((x) =>
+            `<option value="${x.id}"${p.parent === x ? ' selected' : ''}>${x.name}</option>`).join('')
+          + '</select></td>';
+    }
     return `<tr class="${cls}">`
       + `<td><span class="swatch" style="background:${p.colour}"></span></td>`
-      + `<td>${p.name}${p === anchor ? ' <span class="tag">anchor</span>' : ''}</td>`
+      + `<td>${p.name}</td>${link}`
       + `<td>${moved ? fmt(r.lat) : '&ndash;'}</td>`
       + `<td>${moved ? fmt(r.lon) : '&ndash;'}</td>`
       + `<td>${fmt(r.angle)}&deg;</td></tr>`;
   });
+  document.getElementById('th-parent').hidden = !tree;
+  document.body.classList.toggle('tree', tree);   // a wider panel, for the extra column
   document.querySelector('#plates tbody').innerHTML = rows.join('');
   document.getElementById('undo').disabled = undoStack.length === 0;
-  if (anchor) {
+  if (tree) {
     document.getElementById('table-note').textContent =
-      `${anchor.name}'s row is its rotation over the hotspots, from ${reconAge} Ma to today; every `
-      + `other row is that plate's rotation relative to ${anchor.name}.`;
+      `Each row is a plate's rotation relative to the plate it moves with, from ${reconAge} Ma to `
+      + `today. ${mother.name} is the mother plate: its row is its rotation relative to the mantle, `
+      + 'as is any plate that moves with nothing.';
   }
   updateMisfit();
 }
+
+// A "moves with" menu changed: relink, keeping every plate where it is now.
+document.querySelector('#plates tbody').addEventListener('change', (e) => {
+  if (!e.target.matches('select.parent')) return;
+  const plate = plates.find((p) => p.id === Number(e.target.dataset.id));
+  const parent = plates.find((p) => p.id === Number(e.target.value)) || null;
+  const before = snapshot();
+  if (setParent(plate, parent)) undoStack.push(before);
+  updateTable();
+  requestDraw();
+});
 
 // ---- Export -------------------------------------------------------------------------
 
@@ -638,12 +698,11 @@ function rotationFile(age = reconAge) {
     `! ${name}`,
   ].join(' ');
   const out = [];
-  // With an anchor the file is a hierarchy: the anchor relative to 000, every other plate
-  // relative to the anchor -- the same lines rotationAt() interpolates.
-  const ordered = [...plates].sort((a, b) => (b === anchor) - (a === anchor) || a.id - b.id);
-  for (const p of ordered) {
-    const fixed = anchor && p !== anchor ? anchor.id : 0;
-    const r = quatToPoleAngle(fixed ? quatMultiply(quatConjugate(anchor.q), p.q) : p.q);
+  // The file is the rotation tree: each plate relative to its parent (000 if none), the
+  // same lines rotationAt() interpolates, parents listed first.
+  for (const p of treeOrder()) {
+    const fixed = p.parent ? p.parent.id : 0;
+    const r = quatToPoleAngle(relativeQ(p));
     out.push(line(p.id, 0, 90, 0, 0, fixed, p.name));
     out.push(line(p.id, age, r.lat, r.lon, r.angle, fixed, `${p.name} (Pangea)`));
   }
@@ -694,10 +753,9 @@ canvas.addEventListener('pointerdown', (e) => {
     bringToTop(plate);
     drag = {
       mode: twist ? 'twist' : 'move', plate, grab: p, q0: plate.q,
-      // Dragging the anchor moves everything with it: every other plate keeps its
-      // rotation relative to the anchor, as it was when the drag began.
-      rel: plate === anchor ? new Map(plates.filter((x) => x !== anchor)
-        .map((x) => [x, quatMultiply(quatConjugate(anchor.q), x.q)])) : null,
+      // Every plate carried by this one keeps its rotation relative to it, as it was when
+      // the drag began, so it comes along.
+      rel: new Map(descendants(plate).map((x) => [x, quatMultiply(quatConjugate(plate.q), x.q)])),
       // For a twist, the axis is the plate's centre where it is NOW, not at present day.
       axis: rotate(plate.q, plate.centre),
     };
@@ -744,7 +802,7 @@ canvas.addEventListener('pointermove', (e) => {
     delta = quatFromAxisAngle(c, Math.atan2(sin, cos));
   }
   setPlateRotation(drag.plate, quatMultiply(delta, drag.q0));
-  if (drag.rel) for (const [x, r] of drag.rel) setPlateRotation(x, quatMultiply(anchor.q, r));
+  for (const [x, r] of drag.rel) setPlateRotation(x, quatMultiply(drag.plate.q, r));
   updateTable();
   requestDraw();
 });
@@ -774,17 +832,9 @@ document.getElementById('undo').addEventListener('click', () => {
 
 document.getElementById('reset').addEventListener('click', () => {
   undoStack.push(snapshot());
-  restore(new Map(plates.map((p) => [p, initialQ.get(p) ?? IDENTITY])));
+  // Positions go back to the start; the links the student drew stay.
+  restore(new Map(plates.map((p) => [p, { q: initialQ.get(p) ?? IDENTITY, parent: p.parent }])));
   active = null;
-  updateTable();
-  requestDraw();
-});
-
-document.getElementById('anchor').addEventListener('change', (e) => {
-  // Saved rotations stay as they are, so nothing moves at the reconstruction age; what
-  // changes is how every plate travels in between.
-  anchor = plates.find((p) => p.id === Number(e.target.value));
-  for (const p of plates) showPlate(p);
   updateTable();
   requestDraw();
 });
@@ -811,32 +861,15 @@ document.getElementById('export').addEventListener('click', () => {
 
 // ---- Start --------------------------------------------------------------------------
 
-/** The model's own rotation of a plate at `age`, relative to plate 000, as a quaternion. */
-function referenceAt(plate, age) {
-  const [lat, lon, angle] = plate.reference[Math.round(age / plate.referenceStep)];
-  return quatFromAxisAngle(lonLatToVec3(lon, lat), angle * DEG);
-}
-
 /**
- * The anchor, and where plates start. A chapter with `start: "model-relative"` begins with
- * every plate where the model puts it relative to the anchor at the reconstruction age,
- * and the anchor itself unmoved -- so the student's job is the anchor's motion over the
- * hotspots, with the relative fit given.
+ * A chapter that builds a rotation tree names its mother plate and, optionally, starting
+ * links as [child id, parent id] pairs. Every other plate starts moving with nothing.
  */
-function setUpAnchor(chapter) {
-  const box = document.getElementById('anchor-row');
-  if (!chapter.anchor) { box.hidden = true; return; }
-  box.hidden = false;
-  anchor = plates.find((p) => p.id === chapter.anchor);
-  const menu = document.getElementById('anchor');
-  menu.innerHTML = [...plates].sort((a, b) => a.name.localeCompare(b.name)).map((p) =>
-    `<option value="${p.id}"${p === anchor ? ' selected' : ''}>${p.name}</option>`).join('');
-  if (chapter.start === 'model-relative') {
-    const qa = referenceAt(anchor, reconAge);
-    for (const p of plates) {
-      p.q = p === anchor ? IDENTITY : quatMultiply(quatConjugate(qa), referenceAt(p, reconAge));
-      initialQ.set(p, p.q);
-    }
+function setUpTree(chapter) {
+  if (!chapter.tree) return;
+  mother = plates.find((p) => p.id === chapter.tree.mother);
+  for (const [child, parent] of chapter.tree.links || []) {
+    setParent(plates.find((p) => p.id === child), plates.find((p) => p.id === parent));
   }
 }
 
@@ -899,7 +932,8 @@ async function main() {
   shownAge = reconAge;
   if (chapter.view) Object.assign(view, chapter.view);
   document.getElementById('legend-max').textContent = reconAge;
-  setUpAnchor(chapter);
+  for (const p of plates) p.parent = null;
+  setUpTree(chapter);
   if (chapter.hotspots) await loadHotspots(chapter);
   if (chapter.trailGrids) await loadTrailCells(chapter);
   for (const p of plates) showPlate(p);
@@ -913,7 +947,7 @@ async function main() {
   window.__dragPlates = {
     get plates() { return plates; }, chapter, projector, view, pick, screenToSphere,
     rotationFile, draw, setShownAge, get shownAge() { return shownAge; },
-    get anchor() { return anchor; }, misfit, rotationAt, hotspots: () => hotspots,
+    get mother() { return mother; }, setParent, relativeQ, misfit, rotationAt, hotspots: () => hotspots,
     trailCells: () => trailCells,
     rotateByPlate: (id, v) => rotate(plates.find((p) => p.id === id).q, v),
     rotateByPlateShown: (id, v) => rotate(plates.find((p) => p.id === id).shown, v),

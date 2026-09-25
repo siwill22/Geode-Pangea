@@ -1,0 +1,18 @@
+{
+  "id": "tree",
+  "title": "The rotation tree",
+  "set": "Muller2019/shelves.json",
+  "show": {
+    "crust": true
+  },
+  "reconstructionAge": 200,
+  "tree": {
+    "mother": 701
+  },
+  "intro": "Every plate can move with another. Africa is the mother plate: choose, for each of the others, which plate it moves with, and a drag of that plate carries everything linked to it. Build the chain of links back to Africa, then move Africa and watch the whole assembly follow.",
+  "questions": [
+    "Link every plate so that moving Africa carries the whole supercontinent. Is there more than one way to do it?",
+    "Press Play with two different trees that end in the same place. Do the plates take the same paths?",
+    "A plate linked to the mantle stays put when Africa moves. When would you want that?"
+  ]
+}

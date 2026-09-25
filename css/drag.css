@@ -198,3 +198,11 @@ input[type=checkbox] { accent-color: var(--accent); }
 
 /* The hidden attribute wins over any display rule above (.row is a flex box). */
 [hidden] { display: none !important; }
+
+/* "Moves with" menus in the plate table (rotation-tree chapters). */
+.plates select.parent {
+  font: inherit; font-size: 0.75rem; max-width: 7.5rem; padding: 0.05rem 0.2rem;
+  background: #16263d; color: inherit; border: 1px solid rgba(143, 212, 240, 0.3); border-radius: 4px;
+}
+.tree .panel { width: min(26rem, calc(100vw - 2rem)); }
+.tree .plates td { padding: 0.15rem 0.2rem; }
