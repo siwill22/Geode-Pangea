@@ -50,6 +50,7 @@ const view = { lon: 10, lat: 15 };
 let plates = [];           // in draw order: last is on top
 let active = null;         // the plate most recently touched
 let showGhosts = true;
+let showFlow = true;        // the synthetic flowlines (spreading chapters)
 let showCrust = false;     // set by the chapter
 const undoStack = [];      // Map(plate -> q) of every plate, as it was before each change
 let initialQ = new Map();  // the chapter's starting rotations, for Reset
@@ -759,7 +760,7 @@ function drawSpreading() {
   }
   const ages = spreading.flowAges;
   const first = ages.findIndex((a) => a >= t);
-  for (const fl of spreading.flow) {
+  for (const fl of showFlow ? spreading.flow : []) {
     for (const plate of [spreading.left, spreading.right]) {
       const pts = fl[plate.id].slice(first).map((v) => rotate(plate.shown, v));
       if (pts.length > 1) strokeSphereLine(pts, 'rgba(255, 255, 255, 0.35)', 1, [2, 3]);
@@ -1611,6 +1612,11 @@ try { if (localStorage.getItem('pangea:misfit-open') === '0') setMisfitOpen(fals
 
 
 
+document.getElementById('show-flow').addEventListener('change', (e) => {
+  showFlow = e.target.checked;
+  requestDraw();
+});
+
 document.getElementById('ghosts').addEventListener('change', (e) => {
   showGhosts = e.target.checked;
   requestDraw();
@@ -1741,7 +1747,7 @@ async function loadSpreading(chapter) {
   document.getElementById('misfit-title').textContent = t.title;
   document.getElementById('misfit-col').textContent = t.column;
   document.getElementById('misfit-note').textContent = t.note;
-  for (const id of ['key-age', 'key-fz', 'key-flow', 'key-iso', 'key-poles', 'source-spreading']) {
+  for (const id of ['key-age', 'key-fz', 'key-flow', 'key-iso', 'key-poles', 'flow-toggle', 'source-spreading']) {
     document.getElementById(id).hidden = false;
   }
 }
