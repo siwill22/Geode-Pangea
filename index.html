@@ -27,16 +27,19 @@
     <span id="hint-view">Drag the ocean to turn the globe.</span>
   </p>
 
+  <div id="link-row" class="link-row" hidden>
+    <span class="segmented" role="group" aria-label="What a click on a plate does">
+      <button type="button" data-mode="move" aria-pressed="false">Move plates</button>
+      <button type="button" data-mode="link" aria-pressed="true">Link plates</button>
+    </span>
+    <p class="note" id="link-note" aria-live="polite"></p>
+  </div>
   <div id="carry-row" class="carry" hidden>
     <p class="note" id="carry-note" aria-live="polite"></p>
     <div class="row">
       <label class="file-button">Load fit (.rot)<input type="file" id="load-fit" accept=".rot,.txt"></label>
       <label class="file-button">Load Africa motion (.rot)<input type="file" id="load-motion" accept=".rot,.txt"></label>
     </div>
-  </div>
-  <div class="row" id="link-row" hidden>
-    <label class="toggle"><input type="checkbox" id="linking"> Link plates</label>
-    <span class="note" id="link-note" aria-live="polite"></span>
   </div>
   <div id="stage-row" class="stage-row" hidden>
     <div class="stages" role="group" aria-label="Isochron to fit"></div>

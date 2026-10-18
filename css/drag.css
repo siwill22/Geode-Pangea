@@ -195,8 +195,9 @@ input[type=checkbox] { accent-color: var(--accent); }
 }
 .tree .panel { width: min(26rem, calc(100vw - 2rem)); }
 .tree .plates td { padding: 0.15rem 0.2rem; }
-#link-row { align-items: baseline; flex-wrap: wrap; }
-#link-note { margin: 0; flex: 1 1 12rem; }
+.link-row { margin: 0 0 0.7rem; }
+.link-row .segmented button { padding: 0.4rem 1rem; font-size: 0.85rem; }
+#link-note { margin: 0.4rem 0 0; }
 canvas.linking, canvas.linking.over-plate { cursor: crosshair; }
 
 /* Chapters that build on earlier ones: what was carried over, and file fallbacks. */

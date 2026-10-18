@@ -54,8 +54,16 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   }
   const link = (child, parent) => page.selectOption(`select.parent[data-id="${child}"]`, String(parent));
 
-  // Fold the misfit box, as a student would, so it covers no plate near the top right.
-  await page.click('#misfit-toggle');
+  // No hotspots in this chapter: no trails, no misfit box.
+  check(await page.evaluate(() => window.__dragPlates.hotspots().length === 0
+    && document.getElementById('misfit').hidden), 'no hotspots and no misfit box');
+  // It opens in Link mode, with the switch in view at the top of the panel.
+  const mode = () => page.evaluate(() => document.querySelector('#link-row button[aria-pressed="true"]').dataset.mode);
+  check(await mode() === 'link', 'opens in Link plates mode');
+  check(await page.evaluate(() => document.querySelector('#link-row .segmented').getBoundingClientRect().bottom < 400),
+    'the Move/Link switch is near the top of the panel');
+  await page.click('#link-row button[data-mode="move"]');
+  check(await mode() === 'move', 'Move plates pressed');
   check((await page.evaluate(() => window.__dragPlates.mother.name)) === 'Africa', 'Africa is the mother plate');
   check(Object.values(await parents()).every((x) => x === 0), 'every plate starts linked to the mantle');
 
@@ -113,7 +121,7 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   // 7. Point and click, with the real Link plates toggle.
   // Turn the globe so no plate centre used below sits under the misfit box.
   await page.evaluate(() => { const d = window.__dragPlates; d.view.lon = 30; d.view.lat = -5; d.draw(); });
-  await page.click('#linking');
+  await page.click('#link-row button[data-mode="link"]');
   const click = async (id) => { const c = await centreOnScreen(id); await page.mouse.click(c[0], c[1]); };
   const ocean = () => page.mouse.click(1385, 985);   // off the globe: not a plate
   await click(501); await click(301);
@@ -136,7 +144,7 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   const qAfter = await state();
   check(Object.keys(qAfter).every((id) => same(qAfter[id], qBefore[id])), 'no plate moved in link mode');
   await page.screenshot({ path: path.join(out, '2-links.png') });
-  await page.click('#linking');
+  await page.click('#link-row button[data-mode="move"]');
 
   // 8. Dump for pygplates.
   const dump = await page.evaluate(() => {

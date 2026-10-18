@@ -1076,7 +1076,9 @@ function linkByClick(child, parent) {
 function setPending(p) {
   pending = p;
   document.getElementById('link-note').textContent = p
-    ? `${p.name}: now click the plate it moves with, or the ocean for the mantle.` : '';
+    ? `${p.name}: now click the plate it moves with, or the ocean for the mantle.`
+    : linking ? 'Click a plate, then the plate it moves with, or drag one onto the other. Click the ocean to set a plate free.'
+      : 'Drag a plate to move it, with everything linked to it.';
   requestDraw();
 }
 
@@ -1590,10 +1592,18 @@ document.getElementById('reset').addEventListener('click', () => {
   requestDraw();
 });
 
-document.getElementById('linking').addEventListener('change', (e) => {
-  linking = e.target.checked;
+// Move plates or Link plates: what a press on a plate does in a rotation-tree chapter.
+function setLinking(on) {
+  linking = on;
+  for (const b of document.querySelectorAll('#link-row button[data-mode]')) {
+    b.setAttribute('aria-pressed', String((b.dataset.mode === 'link') === on));
+  }
+  canvas.classList.toggle('linking', on);
   setPending(null);
-  canvas.classList.toggle('linking', linking);
+}
+document.querySelector('#link-row .segmented').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-mode]');
+  if (b) setLinking(b.dataset.mode === 'link');
 });
 
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && pending) setPending(null); });
@@ -1647,8 +1657,9 @@ function setUpTree(chapter) {
   if (!chapter.tree) return;
   mother = plates.find((p) => p.id === chapter.tree.mother);
   document.body.classList.add('tree');   // a wider panel, for the "moves with" column
-  for (const id of ['key-mother', 'key-link', 'key-poles']) document.getElementById(id).hidden = false;
+  for (const id of ['key-mother', 'key-link', 'key-poles', 'key-age']) document.getElementById(id).hidden = false;
   document.getElementById('link-row').hidden = false;
+  setLinking(true);   // the chapter's first job is linking
   for (const [child, parent] of chapter.tree.links || []) {
     setParent(plates.find((p) => p.id === child), plates.find((p) => p.id === parent));
   }
