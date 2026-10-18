@@ -9,9 +9,18 @@
   "tree": {
     "mother": 701
   },
-  "intro": "Every plate can move with another. You start from your chapter 3 fit, with Africa (the star) moving as in chapter 4. With Link plates on, click a plate, then the plate it moves with (or drag one onto the other); a line joins their centres. Click the ocean to set a plate free. Link everything back to Africa, then switch to Move plates and move Africa: the whole assembly follows.",
+  "hotspots": [
+    "Tristan",
+    "St Helena",
+    "Réunion",
+    "Canary"
+  ],
+  "hotspotData": "hotspots_maher2015.json",
+  "trailGrids": "trail_grids.json",
+  "intro": "Every plate can move with another. You start from your chapter 3 fit, with Africa (the star) moving as in chapter 4. Switch on Link plates, click a plate, then the plate it moves with; click the ocean to free it. Link everything back to Africa, then move Africa: the assembly follows, and the hotspot trails show whether its motion still fits.",
   "questions": [
     "Link every plate so that moving Africa carries the whole supercontinent. Is there more than one way to do it?",
+    "Chapter 4's rotation ran to 150 Ma; here it runs on to 200 Ma. Does the hotspot misfit change? Adjust Africa and watch the rest follow.",
     "Press Play with two different trees that end in the same place. Do the plates take the same paths?",
     "A plate linked to the mantle stays put when Africa moves. When would you want that?"
   ],
